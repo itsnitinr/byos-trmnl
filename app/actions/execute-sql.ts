@@ -28,8 +28,35 @@ export type SqlExecutionState = {
 
 const SCHEMA_MIGRATIONS_MIGRATION = "0012_create_schema_migrations";
 
+const MIGRATION_CHECKSUM_COMPATIBILITY: Record<
+	string,
+	{ current: string; historical: readonly string[] }
+> = {
+	"0018_remove_mixup_recipe_slug": {
+		current: "5ac29d4283f03370ce3fb9379d669339165b01ab7dc0a487c53f50f236f6924e",
+		historical: [
+			"0437f4ac2c2ad1daefe09f2e263f858e083443b149882fc35c5a718682224688",
+			"5e78a1102c5d925559435d5141d085c756f5f25ffa34033030f8345475afc99e",
+		],
+	},
+};
+
 function checksumSql(sql: string): string {
 	return createHash("sha256").update(sql).digest("hex");
+}
+
+function isAcceptedChecksum(
+	migration: string,
+	appliedChecksum: string,
+	currentChecksum: string,
+): boolean {
+	if (appliedChecksum === currentChecksum) return true;
+
+	const compatibility = MIGRATION_CHECKSUM_COMPATIBILITY[migration];
+	return (
+		compatibility?.current === currentChecksum &&
+		compatibility.historical.includes(appliedChecksum)
+	);
 }
 
 function migrationEntries() {
@@ -197,7 +224,7 @@ export async function executeSqlStatements(): Promise<SqlExecutionState> {
 				const checksum = checksumSql(statement.sql);
 				const appliedChecksum = applied.get(key);
 				if (appliedChecksum) {
-					if (appliedChecksum !== checksum) {
+					if (!isAcceptedChecksum(key, appliedChecksum, checksum)) {
 						resultState[key as keyof typeof SQL_STATEMENTS] = {
 							status: "error",
 							result: [],
