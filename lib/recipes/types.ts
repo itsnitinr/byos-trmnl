@@ -15,6 +15,13 @@ export type RecipeRenderSettings = {
 	 * Set to false to opt out, or use "floyd-steinberg" for explicitness.
 	 */
 	imageDither?: false | "floyd-steinberg";
+	/**
+	 * How the finished frame is mapped onto the device palette. Defaults to
+	 * `"snap"`, which keeps text and flat fills crisp but collapses intermediate
+	 * grays on 1-bit screens. Recipes whose meaning depends on those grays can ask
+	 * for `"floyd-steinberg"` to have them rendered as dither texture.
+	 */
+	paletteReduction?: "snap" | "floyd-steinberg";
 	[key: string]: boolean | string | number | undefined;
 };
 

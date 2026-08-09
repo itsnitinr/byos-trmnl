@@ -9,6 +9,10 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 	"bitmap-patterns": () =>
 		import("../../app/(app)/recipes/screens/bitmap-patterns/bitmap-patterns"),
 	calendar: () => import("../../app/(app)/recipes/screens/calendar/calendar"),
+	"github-contributions": () =>
+		import(
+			"../../app/(app)/recipes/screens/github-contributions/github-contributions"
+		),
 	"hacker-news": () =>
 		import("../../app/(app)/recipes/screens/hacker-news/hacker-news"),
 	"local-news": () =>
@@ -31,6 +35,7 @@ export const reactRecipeSlugs = [
 	"bitcoin-price",
 	"bitmap-patterns",
 	"calendar",
+	"github-contributions",
 	"hacker-news",
 	"local-news",
 	"not-found",

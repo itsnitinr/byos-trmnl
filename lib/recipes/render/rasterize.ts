@@ -45,6 +45,8 @@ export type RasterizeOptions = {
 
 export type RasterizeResults = {
 	png: Buffer | null;
+	/** Echoed back so the device pass can honor settings like `paletteReduction`. */
+	renderSettings?: RecipeRenderSettings | null;
 };
 
 function getRasterDimensions(
@@ -149,5 +151,5 @@ export async function rasterize(
 			? await sharp(pngBuffer).resize(imageWidth, imageHeight).png().toBuffer()
 			: pngBuffer;
 
-	return { png: result };
+	return { png: result, renderSettings: renderSettings ?? null };
 }
