@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { type BmpGrayLevel, encodeGrayBmp } from "@/lib/render/bmp-encoder";
 import {
+	type PaletteReductionMode,
 	quantizePngChannels,
 	reducePngToPalette,
 } from "@/lib/render/palette-reduction";
@@ -13,6 +14,14 @@ import {
 export type RenderDeviceImageInput = {
 	png: Buffer;
 	profile: DeviceProfile;
+	/**
+	 * How the finished frame is mapped onto the device palette. Defaults to
+	 * `"snap"` so text, icons, and flat fills stay crisp. Recipes that rely on
+	 * intermediate grays (a contribution heatmap, a photo-like screen) can opt
+	 * into `"floyd-steinberg"` via `renderSettings.paletteReduction`, which
+	 * renders those grays as dither texture instead of collapsing them.
+	 */
+	reductionMode?: PaletteReductionMode;
 };
 
 export type RenderDeviceImageResult = {
@@ -154,6 +163,7 @@ async function encode(
 export async function renderDeviceImage({
 	png,
 	profile,
+	reductionMode = "snap",
 }: RenderDeviceImageInput): Promise<RenderDeviceImageResult> {
 	const transformed = await transformToDeviceCanvas(png, profile);
 	const target = resolveDeviceRenderTarget(profile.palette);
@@ -165,7 +175,7 @@ export async function renderDeviceImage({
 		quantized = await reducePngToPalette(
 			transformed,
 			target.targetPalette,
-			"snap",
+			reductionMode,
 		);
 	} else if (
 		typeof target.channelBitDepth === "number" &&

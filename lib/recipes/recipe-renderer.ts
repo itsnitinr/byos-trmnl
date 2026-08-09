@@ -153,7 +153,11 @@ export async function renderRecipeForDevice({
 	});
 
 	if (!renders.png) return null;
-	return renderDeviceImage({ png: renders.png, profile: renderProfile });
+	return renderDeviceImage({
+		png: renders.png,
+		profile: renderProfile,
+		reductionMode: renders.renderSettings?.paletteReduction ?? "snap",
+	});
 }
 
 async function buildLiquidHtml(
