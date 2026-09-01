@@ -30,6 +30,8 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 	weather: () => import("../../app/(app)/recipes/screens/weather/weather"),
 	wikipedia: () =>
 		import("../../app/(app)/recipes/screens/wikipedia/wikipedia"),
+	"year-progress": () =>
+		import("../../app/(app)/recipes/screens/year-progress/year-progress"),
 };
 
 export const reactRecipeSlugs = [
@@ -46,6 +48,7 @@ export const reactRecipeSlugs = [
 	"simple-text",
 	"weather",
 	"wikipedia",
+	"year-progress",
 ] as const;
 
 export type ReactRecipeSlug = (typeof reactRecipeSlugs)[number];
