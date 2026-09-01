@@ -3,6 +3,8 @@
 import type { RecipeModuleLoader } from "./types";
 
 export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
+	"air-quality": () =>
+		import("../../app/(app)/recipes/screens/air-quality/air-quality"),
 	album: () => import("../../app/(app)/recipes/screens/album/album"),
 	"bitcoin-price": () =>
 		import("../../app/(app)/recipes/screens/bitcoin-price/bitcoin-price"),
@@ -31,6 +33,7 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 };
 
 export const reactRecipeSlugs = [
+	"air-quality",
 	"album",
 	"bitcoin-price",
 	"bitmap-patterns",
