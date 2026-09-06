@@ -19,6 +19,8 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 		import("../../app/(app)/recipes/screens/hacker-news/hacker-news"),
 	"local-news": () =>
 		import("../../app/(app)/recipes/screens/local-news/local-news"),
+	"month-calendar": () =>
+		import("../../app/(app)/recipes/screens/month-calendar/month-calendar"),
 	"not-found": () =>
 		import("../../app/(app)/recipes/screens/not-found/not-found"),
 	"responsive-example": () =>
@@ -43,6 +45,7 @@ export const reactRecipeSlugs = [
 	"github-contributions",
 	"hacker-news",
 	"local-news",
+	"month-calendar",
 	"not-found",
 	"responsive-example",
 	"simple-text",
