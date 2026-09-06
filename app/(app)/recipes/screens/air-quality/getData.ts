@@ -4,38 +4,39 @@ import { unstable_cache } from "next/cache";
 export const dynamic = "force-dynamic";
 
 export type AqiStandard = "us" | "european";
+export type PollutantKey = "pm2_5" | "pm10";
 
-export interface AqiHour {
-	/** Hour label, e.g. "4 PM". Only rendered on tick positions. */
+export interface AirQualityGauge {
+	key: PollutantKey;
+	/** Display name, e.g. "PM 2.5". */
 	label: string;
-	aqi: number;
+	/** Concentration in µg/m³. */
+	value: number;
+	/** Band the pollutant's own sub-index falls in, e.g. "Good". */
+	category: string;
+	/** Top of the dial. Chosen so the ticks stay round numbers. */
+	scaleMax: number;
 }
 
-export interface Pollutant {
-	name: string;
-	value: string;
-	/** True when this pollutant drives the headline index. */
-	dominant: boolean;
+export interface AirQualitySample {
+	/** Zone-local ISO timestamp from the API, e.g. "2026-05-23T05:00". */
+	time: string;
+	/** Concentration in µg/m³. */
+	value: number;
 }
 
 export interface AirQualityData {
 	locationName: string;
-	dateLabel: string;
+	/** Timestamp of the reading, e.g. "23 May 5:00AM". */
+	updatedLabel: string;
 	standard: AqiStandard;
-	aqi: number;
-	category: string;
-	dominantPollutant: string;
-	/** Change against three hours ago; positive means worsening. */
-	trend: number;
-	hours: AqiHour[];
-	/** Index value the chart's reference line is drawn at. */
-	threshold: number;
-	scaleMax: number;
-	bestWindow: string;
-	bestWindowAqi: number;
-	peakLabel: string;
-	peakAqi: number;
-	pollutants: Pollutant[];
+	gauges: AirQualityGauge[];
+	/** Hourly concentrations for the charted pollutant, past then forecast. */
+	series: AirQualitySample[];
+	/** Index in `series` of the hour the reading was taken. */
+	nowIndex: number;
+	/** Display name of the charted pollutant. */
+	chartLabel: string;
 	error?: string;
 }
 
@@ -44,6 +45,7 @@ type AirQualityParams = {
 	latitude?: number;
 	longitude?: number;
 	standard?: string;
+	pollutant?: string;
 };
 
 interface GeocodingResponse {
@@ -63,48 +65,45 @@ interface AirQualityResponse {
 	} & Record<string, Array<number | null> | string[]>;
 }
 
-/** Concentration keys we surface in the pollutant strip, in display order. */
-const POLLUTANTS = [
-	{ key: "pm2_5", name: "PM2.5", index: "pm2_5" },
-	{ key: "pm10", name: "PM10", index: "pm10" },
-	{ key: "ozone", name: "O3", index: "ozone" },
-	{ key: "nitrogen_dioxide", name: "NO2", index: "nitrogen_dioxide" },
-] as const;
+/** The two pollutants the screen dials, in display order. */
+const GAUGES: Array<{ key: PollutantKey; label: string }> = [
+	{ key: "pm2_5", label: "PM 2.5" },
+	{ key: "pm10", label: "PM 10" },
+];
+
+export const UNIT = "µg/m³";
+
+/** Hours of history charted before the current reading. */
+const PAST_HOURS = 6;
+/** Hours of forecast charted after it. */
+const FORECAST_HOURS = 24;
+
+/**
+ * Dial ceilings. Each divides into seven equal steps, so the tick ring reads
+ * 0/20/40/… rather than arbitrary fractions, and a smoke event can push the
+ * dial onto a coarser scale instead of pinning it at full.
+ */
+const GAUGE_SCALES = [140, 280, 560, 1120];
 
 /** US EPA breakpoints. Upper bound is inclusive. */
 const US_CATEGORIES: Array<[number, string]> = [
-	[50, "GOOD"],
-	[100, "MODERATE"],
-	[150, "SENSITIVE"],
-	[200, "UNHEALTHY"],
-	[300, "VERY UNHEALTHY"],
-	[Number.POSITIVE_INFINITY, "HAZARDOUS"],
+	[50, "Good"],
+	[100, "Moderate"],
+	[150, "Sensitive"],
+	[200, "Unhealthy"],
+	[300, "Very Unhealthy"],
+	[Number.POSITIVE_INFINITY, "Hazardous"],
 ];
 
 /** European Environment Agency bands. */
 const EU_CATEGORIES: Array<[number, string]> = [
-	[20, "GOOD"],
-	[40, "FAIR"],
-	[60, "MODERATE"],
-	[80, "POOR"],
-	[100, "VERY POOR"],
-	[Number.POSITIVE_INFINITY, "EXTREME"],
+	[20, "Good"],
+	[40, "Fair"],
+	[60, "Moderate"],
+	[80, "Poor"],
+	[100, "Very Poor"],
+	[Number.POSITIVE_INFINITY, "Extreme"],
 ];
-
-/**
- * The index value above which the air is no longer comfortable for everyone.
- * Drawn as the reference line on the forecast chart.
- */
-const THRESHOLDS: Record<AqiStandard, number> = { us: 100, european: 60 };
-
-/** Chart never compresses below this, so calm days keep believably short bars. */
-const MIN_SCALE: Record<AqiStandard, number> = { us: 120, european: 70 };
-
-/** Rounds the chart ceiling up to a readable number for the axis label. */
-function niceCeiling(value: number): number {
-	const step = value <= 150 ? 50 : value <= 500 ? 100 : 250;
-	return Math.ceil(value / step) * step;
-}
 
 function categoryFor(aqi: number, standard: AqiStandard): string {
 	const bands = standard === "european" ? EU_CATEGORIES : US_CATEGORIES;
@@ -114,19 +113,22 @@ function categoryFor(aqi: number, standard: AqiStandard): string {
 	return bands[bands.length - 1][1];
 }
 
+function scaleFor(value: number): number {
+	return (
+		GAUGE_SCALES.find((scale) => value <= scale) ??
+		GAUGE_SCALES[GAUGE_SCALES.length - 1]
+	);
+}
+
 export function normalizeStandard(value?: string): AqiStandard {
 	return value?.toLowerCase() === "european" ? "european" : "us";
 }
 
-/** "2026-08-06T22:00" -> "10 PM". Parsed by hand: the string is zone-local. */
-function hourLabel(isoLocal: string): string {
-	const hour = Number(isoLocal.slice(11, 13));
-	const suffix = hour < 12 ? "AM" : "PM";
-	const twelve = hour % 12 === 0 ? 12 : hour % 12;
-	return `${twelve} ${suffix}`;
+export function normalizePollutant(value?: string): PollutantKey {
+	const normalized = value?.toLowerCase().replace(/[\s.]/g, "");
+	return normalized === "pm10" ? "pm10" : "pm2_5";
 }
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
 	"Jan",
 	"Feb",
@@ -144,14 +146,17 @@ const MONTHS = [
 
 /**
  * Formats the API's zone-local timestamp without going through Date, which
- * would reinterpret it in the server's timezone.
+ * would reinterpret it in the server's timezone. "2026-05-23T05:09" is the
+ * clock reading where the air was measured, so it is parsed as plain digits.
  */
-function dateLabelFrom(isoLocal: string): string {
-	const year = Number(isoLocal.slice(0, 4));
-	const month = Number(isoLocal.slice(5, 7)) - 1;
+function readingLabel(isoLocal: string): string {
+	const month = MONTHS[Number(isoLocal.slice(5, 7)) - 1] ?? "";
 	const day = Number(isoLocal.slice(8, 10));
-	const weekday = WEEKDAYS[new Date(Date.UTC(year, month, day)).getUTCDay()];
-	return `${weekday} ${day} ${MONTHS[month]} · ${hourLabel(isoLocal)}`;
+	const hour = Number(isoLocal.slice(11, 13));
+	const minute = isoLocal.slice(14, 16) || "00";
+	const suffix = hour < 12 ? "AM" : "PM";
+	const twelve = hour % 12 === 0 ? 12 : hour % 12;
+	return `${day} ${month} ${twelve}:${minute}${suffix}`;
 }
 
 /**
@@ -205,51 +210,20 @@ function buildUrl(
 	standard: AqiStandard,
 ): string {
 	const prefix = standard === "european" ? "european_aqi" : "us_aqi";
-	const subIndices = POLLUTANTS.map((p) => `${prefix}_${p.index}`).join(",");
-	const concentrations = POLLUTANTS.map((p) => p.key).join(",");
+	const concentrations = GAUGES.map((gauge) => gauge.key).join(",");
+	const subIndices = GAUGES.map((gauge) => `${prefix}_${gauge.key}`).join(",");
 
 	const search = new URLSearchParams({
 		latitude: String(latitude),
 		longitude: String(longitude),
-		current: `${prefix},${concentrations},${subIndices}`,
-		hourly: prefix,
+		current: `${concentrations},${subIndices}`,
+		hourly: concentrations,
 		timezone: "auto",
-		past_hours: "3",
-		forecast_hours: "24",
+		past_hours: String(PAST_HOURS),
+		forecast_hours: String(FORECAST_HOURS),
 	});
 
 	return `https://air-quality-api.open-meteo.com/v1/air-quality?${search}`;
-}
-
-/**
- * Finds the calmest three-hour block in the forecast — the answer to "when
- * should I open the windows / go for a run".
- */
-function findBestWindow(
-	values: number[],
-	times: string[],
-): { label: string; aqi: number } {
-	const WINDOW = 3;
-	if (values.length < WINDOW) {
-		return { label: "—", aqi: values[0] ?? 0 };
-	}
-
-	let bestStart = 0;
-	let bestMean = Number.POSITIVE_INFINITY;
-
-	for (let start = 0; start + WINDOW <= values.length; start++) {
-		const mean =
-			values.slice(start, start + WINDOW).reduce((sum, v) => sum + v, 0) /
-			WINDOW;
-		if (mean < bestMean) {
-			bestMean = mean;
-			bestStart = start;
-		}
-	}
-
-	const from = hourLabel(times[bestStart]);
-	const to = hourLabel(times[bestStart + WINDOW - 1]);
-	return { label: `${from}–${to}`, aqi: Math.round(bestMean) };
 }
 
 async function fetchAirQuality(
@@ -257,6 +231,7 @@ async function fetchAirQuality(
 	longitude: number,
 	locationName: string,
 	standard: AqiStandard,
+	pollutant: PollutantKey,
 ): Promise<AirQualityData> {
 	const response = await fetch(buildUrl(latitude, longitude, standard), {
 		headers: { Accept: "application/json" },
@@ -271,100 +246,82 @@ async function fetchAirQuality(
 
 	const data: AirQualityResponse = await response.json();
 	const prefix = standard === "european" ? "european_aqi" : "us_aqi";
-
 	const current = data.current;
-	const aqi = Number(current?.[prefix]);
-	if (!current || !Number.isFinite(aqi)) {
+	if (!current) {
 		throw new Error("No current air quality reading available");
 	}
 
+	const gauges: AirQualityGauge[] = GAUGES.map((gauge) => {
+		const value = Number(current[gauge.key]);
+		const subIndex = Number(current[`${prefix}_${gauge.key}`]);
+		return {
+			key: gauge.key,
+			label: gauge.label,
+			value: Number.isFinite(value) ? Math.round(value * 10) / 10 : 0,
+			category: Number.isFinite(subIndex)
+				? categoryFor(subIndex, standard)
+				: "",
+			scaleMax: scaleFor(Number.isFinite(value) ? value : 0),
+		};
+	});
+
+	if (!gauges.some((gauge) => Number.isFinite(gauge.value))) {
+		throw new Error("No particulate readings available");
+	}
+
 	const times = data.hourly?.time ?? [];
-	const series = (data.hourly?.[prefix] ?? []) as Array<number | null>;
+	const hourly = (data.hourly?.[pollutant] ?? []) as Array<number | null>;
 	if (times.length === 0) {
 		throw new Error("No hourly air quality forecast available");
 	}
 
-	// past_hours=3 means the request window opens three hours before now, so
-	// the current hour sits at index 3 — unless the API trimmed the history.
-	const nowIndex = Math.min(3, times.length - 1);
-	const threeHoursAgo = series[0];
-	const trend =
-		typeof threeHoursAgo === "number" ? Math.round(aqi - threeHoursAgo) : 0;
-
-	// Gaps in the series are carried forward rather than dropped, so bar
-	// positions stay aligned with their hour labels.
-	let lastKnown = aqi;
-	const forecast = times.slice(nowIndex).map((time, index) => {
-		const raw = series[nowIndex + index];
+	// Gaps are carried forward rather than dropped, so a hole in the feed cannot
+	// shift later readings onto the wrong hour of the axis.
+	let lastKnown =
+		gauges.find((gauge) => gauge.key === pollutant)?.value ??
+		Number(hourly.find((value) => typeof value === "number") ?? 0);
+	const series: AirQualitySample[] = times.map((time, index) => {
+		const raw = hourly[index];
 		if (typeof raw === "number") lastKnown = raw;
-		return { time, aqi: Math.round(lastKnown) };
+		return { time, value: Math.round(lastKnown * 10) / 10 };
 	});
 
-	const values = forecast.map((hour) => hour.aqi);
-	const peakIndex = values.indexOf(Math.max(...values));
-	const best = findBestWindow(
-		values,
-		forecast.map((hour) => hour.time),
+	// past_hours opens the window before now, so the current hour sits that far
+	// in — unless the API trimmed the history it was asked for.
+	const currentHour = String(current.time).slice(0, 13);
+	const matchedIndex = times.findIndex(
+		(time) => time.slice(0, 13) === currentHour,
 	);
-
-	const dominant = POLLUTANTS.reduce((leader, pollutant) => {
-		const value = Number(current[`${prefix}_${pollutant.index}`]);
-		const leaderValue = Number(current[`${prefix}_${leader.index}`]);
-		return Number.isFinite(value) && value > (leaderValue || 0)
-			? pollutant
-			: leader;
-	}, POLLUTANTS[0]);
+	const nowIndex =
+		matchedIndex >= 0 ? matchedIndex : Math.min(PAST_HOURS, times.length - 1);
 
 	return {
 		locationName,
-		dateLabel: dateLabelFrom(String(current.time)),
+		updatedLabel: readingLabel(String(current.time)),
 		standard,
-		aqi: Math.round(aqi),
-		category: categoryFor(aqi, standard),
-		dominantPollutant: dominant.name,
-		trend,
-		hours: forecast.map((hour) => ({
-			label: hourLabel(hour.time),
-			aqi: hour.aqi,
-		})),
-		threshold: THRESHOLDS[standard],
-		scaleMax: niceCeiling(Math.max(...values, MIN_SCALE[standard])),
-		bestWindow: best.label,
-		bestWindowAqi: best.aqi,
-		peakLabel: hourLabel(forecast[peakIndex].time),
-		peakAqi: values[peakIndex],
-		pollutants: POLLUTANTS.map((pollutant) => {
-			const value = Number(current[pollutant.key]);
-			return {
-				name: pollutant.name,
-				value: Number.isFinite(value) ? value.toFixed(1) : "—",
-				dominant: pollutant.name === dominant.name,
-			};
-		}),
+		gauges,
+		series,
+		nowIndex,
+		chartLabel:
+			GAUGES.find((gauge) => gauge.key === pollutant)?.label ?? "PM 2.5",
 	};
 }
 
 function emptyData(
 	locationName: string,
 	standard: AqiStandard,
+	pollutant: PollutantKey,
 	error: string,
 ): AirQualityData {
 	return {
 		locationName,
-		dateLabel: "",
+		updatedLabel: "",
 		standard,
-		aqi: 0,
-		category: "",
-		dominantPollutant: "",
-		trend: 0,
-		hours: [],
-		threshold: THRESHOLDS[standard],
-		scaleMax: niceCeiling(MIN_SCALE[standard]),
-		bestWindow: "",
-		bestWindowAqi: 0,
-		peakLabel: "",
-		peakAqi: 0,
-		pollutants: [],
+		gauges: [],
+		series: [],
+		nowIndex: 0,
+		chartLabel:
+			GAUGES.find((gauge) => gauge.key === pollutant)?.label ?? "PM 2.5",
 		error,
 	};
 }
@@ -390,6 +347,7 @@ export default async function getData(
 	params?: AirQualityParams,
 ): Promise<AirQualityData> {
 	const standard = normalizeStandard(params?.standard);
+	const pollutant = normalizePollutant(params?.pollutant);
 	const requestedName =
 		typeof params?.location === "string" && params.location.trim() !== ""
 			? params.location.trim()
@@ -398,7 +356,7 @@ export default async function getData(
 	const latitude = finiteNumber(params?.latitude);
 	const longitude = finiteNumber(params?.longitude);
 
-	// Coordinates are authoritative when both are set. The header must never
+	// Coordinates are authoritative when both are set. The screen must never
 	// claim a city we did not actually derive the reading from, so an unnamed
 	// coordinate pair is labelled with the coordinates themselves.
 	const resolved =
@@ -412,10 +370,10 @@ export default async function getData(
 
 	if (!resolved) {
 		const name = requestedName ?? FALLBACK_LOCATION;
-		return emptyData(name, standard, `Could not find "${name}"`);
+		return emptyData(name, standard, pollutant, `Could not find "${name}"`);
 	}
 
-	const cacheKey = `${resolved.latitude.toFixed(4)},${resolved.longitude.toFixed(4)},${standard}`;
+	const cacheKey = `${resolved.latitude.toFixed(4)},${resolved.longitude.toFixed(4)},${standard},${pollutant}`;
 
 	try {
 		// Throwing inside the cached function keeps failures out of the cache.
@@ -426,6 +384,7 @@ export default async function getData(
 					resolved.longitude,
 					resolved.locationName,
 					standard,
+					pollutant,
 				),
 			["air-quality", cacheKey],
 			{
@@ -445,6 +404,7 @@ export default async function getData(
 		return emptyData(
 			resolved.locationName,
 			standard,
+			pollutant,
 			"Air quality unavailable",
 		);
 	}
