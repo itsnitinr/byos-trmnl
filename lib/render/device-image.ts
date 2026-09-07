@@ -13,6 +13,7 @@ import {
 	VALID_GRAY_LEVELS,
 } from "@/lib/trmnl/palette-colors";
 import { measureRenderStage, recordCacheStatus } from "./diagnostics";
+import { encodeIndexedPng } from "./indexed-png";
 
 export type RenderDeviceImageInput = {
 	png: Buffer;
@@ -83,7 +84,7 @@ async function encode(
 	pixels: DevicePixels,
 	mimeType: string,
 	imageSizeLimit?: number,
-	options: { paletteColorCount?: number } = {},
+	options: { paletteColorCount?: number; palette?: number[][] } = {},
 ): Promise<{ buffer: Buffer; sizeLimitExceeded: boolean }> {
 	const image = () =>
 		sharp(pixels.data, {
@@ -133,6 +134,34 @@ async function encode(
 	}
 
 	if (mimeType === "image/png") {
+		// Device pixels are already palette-exact: pack indices directly instead
+		// of running libimagequant's expensive colour search again.
+		if (options.palette) {
+			const packed = await encodeIndexedPng(
+				pixels.data,
+				pixels.width,
+				pixels.height,
+				options.palette,
+			);
+			if (packed && (!imageSizeLimit || packed.length <= imageSizeLimit))
+				return { buffer: packed, sizeLimitExceeded: false };
+			if (packed) {
+				const compact = await encodeIndexedPng(
+					pixels.data,
+					pixels.width,
+					pixels.height,
+					options.palette,
+					9,
+				);
+				if (compact && (!imageSizeLimit || compact.length <= imageSizeLimit))
+					return { buffer: compact, sizeLimitExceeded: false };
+			}
+		} else {
+			const fast = await image().png({ compressionLevel: 6 }).toBuffer();
+			if (!imageSizeLimit || fast.length <= imageSizeLimit)
+				return { buffer: fast, sizeLimitExceeded: false };
+		}
+		// Only spend extra compression work when the fast encoding exceeds the device budget.
 		const candidates: Buffer[] = [
 			await image().png({ compressionLevel: 9, effort: 10 }).toBuffer(),
 		];
@@ -205,7 +234,12 @@ async function encodeDeviceImage({
 		pixels,
 		profile.model.mime_type,
 		profile.model.image_size_limit,
-		{ paletteColorCount },
+		{
+			paletteColorCount,
+			palette: paletteColorCount
+				? target.targetPalette?.map(({ r, g, b }) => [r, g, b])
+				: undefined,
+		},
 	);
 
 	return {
@@ -257,7 +291,7 @@ export async function renderDeviceImage(
 	});
 	const result = await encodedFrames.get(
 		key,
-		30_000,
+		Number.POSITIVE_INFINITY, // Content-addressed bytes cannot become stale; LRU limits memory.
 		() => measureRenderStage("encode", () => encodeWithinBudget(input)),
 		(image) => image.buffer.length,
 	);
