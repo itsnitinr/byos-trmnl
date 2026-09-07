@@ -16,3 +16,7 @@ PORT=3011 CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome pnpm test:browser
 ```
 
 Set the executable path for your installation, or use the existing `BROWSER_URL` / `BROWSER_WS_ENDPOINT` configuration. Run with the pinned Node runtime. The smoke script uses isolated browser contexts and does not write to the database.
+
+Run `pnpm benchmark:png` to compare the previous dual PNG encoding path with the exact indexed encoder using these fixtures. It warms each path once, reports the median of five samples and encoded byte sizes, and asserts identical decoded pixels. No server is needed. This measures encoding only, not database, network, rasterization or device refresh time.
+
+Recipe authors can set `meta.renderSettings.cacheSeconds` (default 30, capped at 86400) for deterministic content. Cache identity already includes user, parameters, data, recipe version, dimensions, palette and renderer. If a component reads the clock, leave the short default or supply `getRenderCacheKey(params, data)` that changes with every visible time interval; daily art uses its local edition date. Do not extend lifetimes for mutable image URLs or other implicit inputs without an appropriate key. Data refresh intervals remain independent and are resolved before frame-cache lookup.

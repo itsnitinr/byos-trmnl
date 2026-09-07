@@ -50,7 +50,7 @@ Browser smoke tests found that Liquid pages created with setContent have an opaq
 
 - All 15 planned items are implemented, with a separate commit for each and follow-up commits for issues found during validation.
 - Node 22.22.3 production build: passed (database disabled, recipe sync disabled, registry offline).
-- Jest: 19 suites, 131 tests passed. TypeScript and Biome passed.
+- Jest: 27 suites, 154 tests passed on Node 22.22.3. TypeScript and Biome passed.
 - Takumi calibration: exact pixel matches at all three checked sizes/palettes.
 - Real Chrome: bundled framework fonts loaded, screenshot pixels matched, and private resource requests were blocked (`pnpm test:browser`).
 - Production React browser renderer: calibration and moon captures succeeded through signed preview tokens and one-use data snapshots.
@@ -60,3 +60,24 @@ Browser smoke tests found that Liquid pages created with setContent have an opaq
 - Existing model snapshot edits were compared byte-for-byte as a patch and preserved. No existing database was migrated; no logs were pruned; no deployment was made.
 
 Operational notes: apply migration `0022_add_recipe_data_refresh.sql` through the existing setup/migration flow. Log pruning remains opt-in (`LOG_RETENTION_DAYS=0` by default). In-memory render/data caches and diagnostics are local to each process and reset on restart.
+
+## Additional refresh performance sweep
+
+- Encode already-quantized pixels directly into exact indexed PNGs; avoid a second palette search and dual PNG encoding unless the device byte budget requires compression fallbacks. Output pixels are unchanged.
+- Serve bundled/last-known registry snapshots immediately and refresh them after the response. Firmware release checks also run after the response, so optional upstream metadata cannot delay a normal display refresh.
+- Resolve React parameters and refresh settings in one tenant-scoped configuration query. Liquid rendering reuses its source-file lookup for both settings and templates.
+- Cache public image downloads for at most 30 seconds, respecting upstream `no-store`, `private`, `no-cache`, `max-age`, and `Age`. Coalesce concurrent downloads and cache palette preparation by source bytes, dimensions and palette. Both caches are bounded to 32 MiB.
+- Keep content-addressed encoded output until LRU eviction. Deterministic static screens and daily art retain frames for up to a day; daily editions include their timezone-derived date in the key. Parameter/data/version changes invalidate immediately. Undeclared recipes keep the 30-second default. Freshness timestamps no longer invalidate unchanged data; stale markers are cached separately.
+- Save playlist position and device telemetry together in one scoped write. Failed playlist persistence still fails the display request.
+
+Reproducible encoding-only benchmark: `pnpm benchmark:png` (one warm-up, median of five runs). Local Node 22.22.3 results:
+
+| Calibration | Previous encoding | Indexed encoding | Speedup | Bytes before → after |
+| --- | ---: | ---: | ---: | ---: |
+| 800×480, 2 colors | 101.45 ms | 4.88 ms | 20.8× | 5021 → 5147 |
+| 480×800, 4 grays | 100.75 ms | 4.46 ms | 22.6× | 8487 → 8804 |
+| 1872×1404, 16 grays | 552.88 ms | 24.72 ms | 22.4× | 33204 → 35735 |
+
+These are local CPU encoding measurements, not whole-device refresh speedups. The benchmark discovers palette order from pixels, so compressed sizes can differ slightly from the device pipeline. All decoded pixels matched. The fast path trades a small file-size increase for CPU savings; tight device budgets still trigger stronger compression.
+
+Production HTTP calibration checks measured cold rendering work of 115.9 ms at 800×480 and 282.9 ms at 1872×1404; repeated requests measured 0.5–0.9 ms of rendering work and 5.5–14.2 ms including local HTTP overhead. These runs used no database and offline registry snapshots, so they do not measure deployment/database latency or physical e-ink refresh time. Production pixel regressions and real Chrome font/network/screenshot checks passed again after this sweep.
