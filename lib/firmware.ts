@@ -137,3 +137,8 @@ export async function getLatestFirmware(): Promise<FirmwareRelease | null> {
 		});
 	return pending;
 }
+
+/** Last verified release, available without putting GitHub/CDN latency on display requests. */
+export function peekLatestFirmware(): FirmwareRelease | null {
+	return cachedRelease;
+}

@@ -1,3 +1,4 @@
+import { afterResponse } from "@/lib/cache/after-response";
 import { db } from "@/lib/database/db";
 import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
@@ -7,7 +8,11 @@ import {
 } from "@/lib/device/defaults";
 import { parseRequestHeaders } from "@/lib/device/request-headers";
 import { selectDisplayForDevice } from "@/lib/display/select";
-import { getLatestFirmware, isUpdateAvailable } from "@/lib/firmware";
+import {
+	getLatestFirmware,
+	isUpdateAvailable,
+	peekLatestFirmware,
+} from "@/lib/firmware";
 import { logError, logInfo } from "@/lib/logger";
 import { DeviceDisplayMode } from "@/lib/mixup/constants";
 import {
@@ -213,7 +218,10 @@ export async function GET(request: Request) {
 			temperature_profile: device.temperature_profile ?? "default",
 		};
 
-		const latestFirmware = await getLatestFirmware();
+		const latestFirmware = peekLatestFirmware();
+		afterResponse(async () => {
+			await getLatestFirmware();
+		});
 		if (
 			latestFirmware &&
 			isUpdateAvailable(device.firmware_version, latestFirmware.version)
