@@ -8,7 +8,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Normalize nullable model image budgets and support updated UI scale variables.
 - [x] Fix machine authentication for browser previews and UUID webhooks.
 - [x] Cache rendered images with tenant isolation and concurrent request deduplication.
-- [ ] Reduce database readiness overhead and add log retention.
+- [x] Reduce database readiness overhead and add log retention.
 - [ ] Retain last successful data/images and bound upstream work.
 - [ ] Queue, isolate, and restrict browser renders.
 - [ ] Optimize palette conversion and intermediate image encoding.
@@ -25,3 +25,5 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 
 Run focused tests for each change, plus TypeScript, Biome, and diff checks at meaningful checkpoints.
 Finish with the full test suite, a production build, and browser checks of new screens/tools.
+
+Log retention is opt-in via `LOG_RETENTION_DAYS`; existing logs are preserved by default.

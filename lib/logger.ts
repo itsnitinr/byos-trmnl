@@ -1,5 +1,5 @@
 import { db } from "@/lib/database/db";
-import { checkDbConnection } from "@/lib/database/utils";
+import { invalidateDbReadiness } from "@/lib/database/utils";
 
 export type LogLevel = "info" | "warn" | "error" | "debug";
 
@@ -17,25 +17,6 @@ export const log = async (
 	// Convert Error objects to strings if necessary
 	const messageText = message instanceof Error ? message.message : message;
 	const trace = message instanceof Error ? message.stack : options.trace;
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		// Database client not initialized, cannot log, will output to console instead
-		// but use better formatting for errors, and use coloring for stdout
-		// and try to have proper spacing and be complete
-		const color =
-			level === "error"
-				? "\x1b[31m"
-				: level === "warn"
-					? "\x1b[33m"
-					: "\x1b[32m";
-		const reset = "\x1b[0m";
-		console.log(`${color}[${level.toUpperCase()}]${reset} ${messageText}`);
-		if (trace) {
-			console.log(`${color}[${level.toUpperCase()}]${reset} ${trace}`);
-		}
-		return;
-	}
 
 	// Always do console logging first
 	switch (level) {
@@ -53,23 +34,23 @@ export const log = async (
 			break;
 	}
 
-	// Then log to database without awaiting
-	(async () => {
-		try {
-			await db
-				.insertInto("system_logs")
-				.values({
-					level,
-					message: messageText,
-					source: options.source || null,
-					metadata: options.metadata ? JSON.stringify(options.metadata) : null,
-					trace: trace || null,
-				})
-				.execute();
-		} catch (err) {
-			console.error("Error writing to system_logs:", err);
-		}
-	})();
+	// Callers may await completion when delivery matters. Failures never recurse.
+	if (!process.env.DATABASE_URL) return;
+	try {
+		await db
+			.insertInto("system_logs")
+			.values({
+				level,
+				message: messageText,
+				source: options.source || null,
+				metadata: options.metadata ? JSON.stringify(options.metadata) : null,
+				trace: trace || null,
+			})
+			.execute();
+	} catch (err) {
+		invalidateDbReadiness();
+		console.error("Error writing to system_logs:", err);
+	}
 };
 
 // Convenience methods
