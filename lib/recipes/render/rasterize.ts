@@ -21,6 +21,7 @@ import type { RecipeRenderSettings } from "../types";
 
 export type RasterizeOptions = {
 	slug: string;
+	freshness?: import("../runtime/data-cache").DataFreshness;
 	imageWidth: number;
 	imageHeight: number;
 	layoutWidth?: number;

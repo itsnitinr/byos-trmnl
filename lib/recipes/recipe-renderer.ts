@@ -65,7 +65,7 @@ export async function renderRecipeToImage({
 	// React path
 	const resolved = await resolveReactRecipe(slug, userId ?? undefined);
 	if (resolved) {
-		const { definition, params, data } = resolved;
+		const { definition, params, data, freshness } = resolved;
 		const screen = createScreenProfile({
 			width: imageWidth,
 			height: imageHeight,
@@ -93,6 +93,7 @@ export async function renderRecipeToImage({
 				paletteId,
 				userId,
 				renderSettings: definition.meta.renderSettings ?? null,
+				freshness,
 			},
 			{ params, data, version: definition.meta.version },
 		);

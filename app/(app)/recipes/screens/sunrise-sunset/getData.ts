@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { recipeFetch as fetch } from "@/lib/recipes/runtime/fetch-context";
 
 // The whole screen moves with the clock, so it is never prerendered.
 export const dynamic = "force-dynamic";

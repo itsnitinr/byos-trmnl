@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { readResponseBytes } from "@/lib/network/response-bytes";
 import {
 	quantizePngChannels,
 	reducePngToPalette,
@@ -40,11 +41,11 @@ async function loadImageSource(
 	const dataUrl = parseDataUrl(src);
 	if (dataUrl) return dataUrl;
 
-	const response = await fetch(src);
+	const response = await fetch(src, { signal: AbortSignal.timeout(10_000) });
 	if (!response.ok) {
 		throw new Error(`Failed to fetch image ${src}: ${response.status}`);
 	}
-	return Buffer.from(await response.arrayBuffer());
+	return readResponseBytes(response, 15 * 1024 * 1024);
 }
 
 function normalizeDimension(value: number | undefined): number | undefined {
@@ -65,7 +66,9 @@ async function normalizeImageToPng({
 }): Promise<Buffer> {
 	const targetWidth = normalizeDimension(width);
 	const targetHeight = normalizeDimension(height);
-	let image = sharp(buffer).rotate().flatten({ background: "#ffffff" });
+	let image = sharp(buffer, { limitInputPixels: 32_000_000 })
+		.rotate()
+		.flatten({ background: "#ffffff" });
 
 	if (targetWidth || targetHeight) {
 		image = image.resize(targetWidth, targetHeight, {

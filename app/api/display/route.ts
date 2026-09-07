@@ -192,7 +192,7 @@ export async function GET(request: Request) {
 				break;
 		}
 
-		updateDeviceStatus(device, headers, dynamicRefreshRate);
+		await updateDeviceStatus(device, headers, dynamicRefreshRate);
 
 		logInfo("Display request successful", {
 			source: "api/display",

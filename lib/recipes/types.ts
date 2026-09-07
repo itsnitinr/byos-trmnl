@@ -71,7 +71,10 @@ export type RecipeDefinition<
 	meta: RecipeMeta;
 	paramsSchema: P;
 	dataSchema: D;
-	getData?: (params: z.infer<P>) => Promise<z.infer<D>>;
+	getData?: (
+		params: z.infer<P>,
+		context?: { signal: AbortSignal },
+	) => Promise<z.infer<D>>;
 	Component: ComponentType<
 		RecipeRenderProps & {
 			params: z.infer<P>;

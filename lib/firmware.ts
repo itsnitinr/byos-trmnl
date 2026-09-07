@@ -22,6 +22,8 @@ const FIRMWARE_CDN_URL = "https://trmnl-fw.s3.us-east-2.amazonaws.com";
 // Cache configuration
 let cachedRelease: FirmwareRelease | null = null;
 let cacheTime = 0;
+let retryAfter = 0;
+let pending: Promise<FirmwareRelease | null> | undefined;
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
 
 /**
@@ -51,7 +53,7 @@ export function isUpdateAvailable(
  * Results are cached for 6 hours to avoid rate limits
  * @returns FirmwareRelease object or null if fetch fails
  */
-export async function getLatestFirmware(): Promise<FirmwareRelease | null> {
+async function fetchLatestFirmware(): Promise<FirmwareRelease | null> {
 	const now = Date.now();
 
 	// Return cached release if still valid
@@ -61,6 +63,7 @@ export async function getLatestFirmware(): Promise<FirmwareRelease | null> {
 
 	try {
 		const response = await fetch(GITHUB_API_URL, {
+			signal: AbortSignal.timeout(2500),
 			headers: {
 				Accept: "application/vnd.github.v3+json",
 				"User-Agent": "BYOS-TRMNL",
@@ -96,10 +99,13 @@ export async function getLatestFirmware(): Promise<FirmwareRelease | null> {
 
 		// Don't offer an update the device can't download: variant-partitioned
 		// buckets 404 the flat FW{version}.bin path, reboot-looping devices.
-		const reachable = await fetch(release.downloadUrl, { method: "HEAD" })
+		const reachable = await fetch(release.downloadUrl, {
+			method: "HEAD",
+			signal: AbortSignal.timeout(2500),
+		})
 			.then((r) => r.ok)
 			.catch(() => false);
-		if (!reachable) return null;
+		if (!reachable) return cachedRelease;
 
 		// Update cache
 		cachedRelease = release;
@@ -118,4 +124,16 @@ export async function getLatestFirmware(): Promise<FirmwareRelease | null> {
 export function clearFirmwareCache(): void {
 	cachedRelease = null;
 	cacheTime = 0;
+	retryAfter = 0;
+}
+
+export async function getLatestFirmware(): Promise<FirmwareRelease | null> {
+	if (Date.now() < retryAfter) return cachedRelease;
+	if (cachedRelease && Date.now() - cacheTime < CACHE_TTL) return cachedRelease;
+	if (!pending)
+		pending = fetchLatestFirmware().finally(() => {
+			retryAfter = Date.now() + 60_000;
+			pending = undefined;
+		});
+	return pending;
 }
