@@ -54,3 +54,5 @@ sync.sh
 
 # local planning notes
 .notes/
+/.next-*/
+/tests/rendering/*.actual.png

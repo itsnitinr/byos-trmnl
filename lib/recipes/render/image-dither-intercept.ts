@@ -27,7 +27,6 @@ function isSkippableImageSrc(src: string): boolean {
 	const trimmed = src.trim();
 	return (
 		trimmed.length === 0 ||
-		trimmed.startsWith("data:") ||
 		trimmed.startsWith("blob:") ||
 		trimmed.startsWith("#")
 	);

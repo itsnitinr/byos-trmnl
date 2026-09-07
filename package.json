@@ -22,7 +22,8 @@
 		"format": "biome format --write ./app ./components ./lib ./utils ./hooks",
 		"release:major": "pnpm version major -m 'chore(release): %s' && git push --follow-tags",
 		"release:minor": "pnpm version minor -m 'chore(release): %s' && git push --follow-tags",
-		"release:patch": "pnpm version patch -m 'chore(release): %s' && git push --follow-tags"
+		"release:patch": "pnpm version patch -m 'chore(release): %s' && git push --follow-tags",
+		"test:render": "node scripts/check-rendering.mjs"
 	},
 	"dependencies": {
 		"@radix-ui/react-aspect-ratio": "^1.1.10",

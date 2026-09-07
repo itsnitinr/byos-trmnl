@@ -168,6 +168,11 @@ async function refresh(resource: RegistryResource): Promise<unknown> {
 export async function getRegistry(
 	resource: RegistryResource,
 ): Promise<unknown> {
+	if (process.env.TRMNL_REGISTRY_OFFLINE === "true") {
+		const snapshot = await readSnapshot(resource);
+		if (!snapshot) throw new Error(`Missing offline registry: ${resource}`);
+		return snapshot;
+	}
 	if (isProxyLive()) {
 		return fetchUpstream(resource);
 	}

@@ -14,7 +14,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Optimize palette conversion and intermediate image encoding.
 - [x] Resolve browser recipe data once.
 - [x] Make screenshot readiness deterministic and pin framework assets.
-- [ ] Add device calibration and visual regression coverage.
+- [x] Add device calibration and visual regression coverage.
 - [ ] Enforce device image byte budgets with a valid fallback.
 - [ ] Support per-recipe data refresh intervals.
 - [ ] Add a render inspector.
@@ -33,3 +33,5 @@ Last-successful data/images are bounded in-memory caches (up to 24h stale); a re
 Palette checkpoint: exact PNG/BMP/WebP bytes matched the previous encoder for synthetic RGBA input at 0° and 90°. The 1872×1404 solid-white 256-color snap benchmark fell from 1841 ms to 25 ms locally (synthetic, not end-to-end).
 
 Readiness checkpoint: headless Chrome waited for delayed recipe content and image decode; corrupt images were rejected. Framework 3.3.1 CSS, JavaScript, and fonts are bundled with source hashes.
+
+Visual test server uses the pinned Node 22.22.3 runtime; Node 26 development route discovery failed locally. Calibration also exposed and fixed skipped dithering of data-URL images.
