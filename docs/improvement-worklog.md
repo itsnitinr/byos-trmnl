@@ -45,3 +45,18 @@ Daily art recipes work offline and accept an IANA timezone plus an optional fixe
 Production build validation caught a request-time boundary in the recipe catalog. Static route generation now reads only built-in metadata, and the catalog declares request-time loading. Missing-database checks bypass the clock-based readiness cache entirely.
 
 Browser smoke tests found that Liquid pages created with setContent have an opaque origin. Bundled public font assets now send CORS headers so Chromium can load them with web security enabled.
+
+## Final results
+
+- All 15 planned items are implemented, with a separate commit for each and follow-up commits for issues found during validation.
+- Node 22.22.3 production build: passed (database disabled, recipe sync disabled, registry offline).
+- Jest: 19 suites, 131 tests passed. TypeScript and Biome passed.
+- Takumi calibration: exact pixel matches at all three checked sizes/palettes.
+- Real Chrome: bundled framework fonts loaded, screenshot pixels matched, and private resource requests were blocked (`pnpm test:browser`).
+- Production React browser renderer: calibration and moon captures succeeded through signed preview tokens and one-use data snapshots.
+- Interactive UI: inspector displayed output and cache hits; simulator selected the correct screen across the 18:00 window boundary in Asia/Kolkata.
+- Art: landscape and portrait output visually reviewed. Fixed-date generation and local-midnight edition changes are covered by tests.
+- A warm calibration request took 1.2 ms of measured server work locally; this is a small synthetic example, not a deployment benchmark.
+- Existing model snapshot edits were compared byte-for-byte as a patch and preserved. No existing database was migrated; no logs were pruned; no deployment was made.
+
+Operational notes: apply migration `0022_add_recipe_data_refresh.sql` through the existing setup/migration flow. Log pruning remains opt-in (`LOG_RETENTION_DAYS=0` by default). In-memory render/data caches and diagnostics are local to each process and reset on restart.
