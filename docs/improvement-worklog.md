@@ -12,7 +12,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Retain last successful data/images and bound upstream work.
 - [x] Queue, isolate, and restrict browser renders.
 - [x] Optimize palette conversion and intermediate image encoding.
-- [ ] Resolve browser recipe data once.
+- [x] Resolve browser recipe data once.
 - [ ] Make screenshot readiness deterministic and pin framework assets.
 - [ ] Add device calibration and visual regression coverage.
 - [ ] Enforce device image byte budgets with a valid fallback.

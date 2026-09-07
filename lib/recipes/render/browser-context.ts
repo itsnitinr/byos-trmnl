@@ -4,6 +4,7 @@ export type BrowserRenderContext = {
 	userId: string | null;
 	slug: string;
 	expiresAt: number;
+	snapshotId?: string;
 };
 
 // Authenticated deployments share their configured secret across server bundles.
@@ -20,12 +21,14 @@ const TTL_MS = 30_000;
 export function createBrowserRenderContext(
 	userId: string | null | undefined,
 	slug: string,
+	snapshotId?: string,
 ): string {
 	const payload = Buffer.from(
 		JSON.stringify({
 			userId: userId ?? null,
 			slug,
 			expiresAt: Date.now() + TTL_MS,
+			snapshotId,
 		}),
 	).toString("base64url");
 	const signature = crypto

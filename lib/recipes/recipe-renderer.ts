@@ -94,6 +94,7 @@ export async function renderRecipeToImage({
 				userId,
 				renderSettings: definition.meta.renderSettings ?? null,
 				freshness,
+				snapshot: { params, data, freshness },
 			},
 			{ params, data, version: definition.meta.version },
 		);

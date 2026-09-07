@@ -22,6 +22,7 @@ import type { RecipeRenderSettings } from "../types";
 export type RasterizeOptions = {
 	slug: string;
 	freshness?: import("../runtime/data-cache").DataFreshness;
+	snapshot?: import("./browser-snapshot").RecipeDataSnapshot;
 	imageWidth: number;
 	imageHeight: number;
 	layoutWidth?: number;
@@ -115,6 +116,7 @@ export async function rasterize(
 						userId,
 						captureWidth: target.width,
 						captureHeight: target.height,
+						snapshot: options.snapshot,
 					},
 				);
 			} else {
