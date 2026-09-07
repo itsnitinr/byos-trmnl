@@ -6,6 +6,7 @@ import {
 	type RecipeDataSnapshot,
 	storeBrowserSnapshot,
 } from "@/lib/recipes/render/browser-snapshot";
+import { waitForRenderReady } from "@/lib/recipes/render/readiness";
 
 /**
  * Parse a Cookie header string into individual cookie objects.
@@ -116,12 +117,7 @@ export async function renderWithBrowser(
 						"Recipe preview returned an error or unexpected redirect",
 					);
 				}
-				await page
-					.waitForNetworkIdle({ idleTime: 500, timeout: 5000 })
-					.catch(() => {
-						// Some recipes include slow third-party assets; capture the server-rendered
-						// page rather than failing the whole device render.
-					});
+				await waitForRenderReady(page, true);
 				const screenshot = await page.screenshot({
 					type: "png",
 					clip: { x: 0, y: 0, width: captureWidth, height: captureHeight },

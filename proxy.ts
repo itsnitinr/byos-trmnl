@@ -28,6 +28,8 @@ const PUBLIC_PATHS = [
 	"/apple-icon",
 	"/trmnl-icons",
 	"/fonts",
+	"/trmnl-framework",
+	"/vendor/trmnl/3.3.1",
 	"/sign-in",
 	"/sign-up",
 	"/recover",

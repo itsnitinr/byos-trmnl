@@ -37,6 +37,18 @@ export async function withBrowserPage<T>(
 						return;
 					}
 					if (
+						url.origin === `http://127.0.0.1:${process.env.PORT || 3000}` &&
+						([
+							"/trmnl-framework/3.3.1/plugins.css",
+							"/trmnl-framework/3.3.1/plugins.js",
+						].includes(url.pathname) ||
+							url.pathname.startsWith("/vendor/trmnl/3.3.1/fonts/")) &&
+						!request.isNavigationRequest()
+					) {
+						await request.continue();
+						return;
+					}
+					if (
 						previewUrl &&
 						url.origin === new URL(previewUrl).origin &&
 						(request.url() === previewUrl ||

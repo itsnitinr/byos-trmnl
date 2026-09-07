@@ -105,10 +105,17 @@ export default async function RecipePreviewPage({
 		targetWidth,
 		targetHeight,
 	);
-	return wrapWithTrmnlCss(
-		rendered,
-		profile?.model ?? null,
-		targetWidth,
-		targetHeight,
+	return (
+		<div
+			data-recipe-ready="true"
+			style={{ display: "flex", width: targetWidth, height: targetHeight }}
+		>
+			{wrapWithTrmnlCss(
+				rendered,
+				profile?.model ?? null,
+				targetWidth,
+				targetHeight,
+			)}
+		</div>
 	);
 }

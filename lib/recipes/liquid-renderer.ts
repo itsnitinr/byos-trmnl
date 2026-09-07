@@ -15,8 +15,8 @@ import { logger } from "./logger";
 import { type DataFreshness, resolveCachedData } from "./runtime/data-cache";
 import type { RecipeParamDefinitions } from "./zod-form";
 
-const TRMNL_CSS_URL = "https://trmnl.com/css/latest/plugins.css";
-const TRMNL_JS_URL = "https://trmnl.com/js/latest/plugins.js";
+const TRMNL_CSS_URL = "/trmnl-framework/3.3.1/plugins.css";
+const TRMNL_JS_URL = "/trmnl-framework/3.3.1/plugins.js";
 
 export type CustomField = {
 	keyname?: string;
