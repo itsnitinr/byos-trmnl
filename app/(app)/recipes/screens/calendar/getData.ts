@@ -1,6 +1,7 @@
 import dns from "node:dns/promises";
 import net from "node:net";
 import IcalExpander from "ical-expander";
+import { recipeFetch as fetch } from "@/lib/recipes/runtime/fetch-context";
 
 export const dynamic = "force-dynamic";
 

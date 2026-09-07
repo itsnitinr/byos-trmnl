@@ -1,0 +1,131 @@
+{
+  "version": "3.3.1",
+  "note": "CSS font URLs rewritten to the bundled version directory. Other assets unmodified. Upstream: https://trmnl.com/framework/releases",
+  "assets": [
+    {
+      "file": "fonts/TRMNL12-Regular.woff2",
+      "source": "https://trmnl.com/fonts/TRMNL12-Regular.woff2",
+      "sha256": "fe8c42f95b2fb010222b288616bd87c90d19c8d12447291c6e15bb69efa28c42"
+    },
+    {
+      "file": "fonts/TRMNL12-Regular.woff",
+      "source": "https://trmnl.com/fonts/TRMNL12-Regular.woff",
+      "sha256": "4eb4d657c2667326c5595aa584386f952235fcf4a749f0b145748c746e7cf2cf"
+    },
+    {
+      "file": "fonts/TRMNL12-Regular.ttf",
+      "source": "https://trmnl.com/fonts/TRMNL12-Regular.ttf",
+      "sha256": "17711493bd26695a40b9c72557a6c2f4611a30a81845c5aaa117648f3a0b3795"
+    },
+    {
+      "file": "fonts/TRMNL12-Bold.woff2",
+      "source": "https://trmnl.com/fonts/TRMNL12-Bold.woff2",
+      "sha256": "e2539a79946ad0ed86f87c93f0b8cefc6bac703ef89fee0284871977e2592885"
+    },
+    {
+      "file": "fonts/TRMNL12-Bold.woff",
+      "source": "https://trmnl.com/fonts/TRMNL12-Bold.woff",
+      "sha256": "0d2ec4a1ea36a95d4fb606620a74837507e1e4d759670f1f741018683192be31"
+    },
+    {
+      "file": "fonts/TRMNL12-Bold.ttf",
+      "source": "https://trmnl.com/fonts/TRMNL12-Bold.ttf",
+      "sha256": "1b7a292a4dec1708f9c78b69a5380c617a6add97636284c2d22803018b6b57cc"
+    },
+    {
+      "file": "fonts/TRMNL16-Regular.woff2",
+      "source": "https://trmnl.com/fonts/TRMNL16-Regular.woff2",
+      "sha256": "b2028391dce2cc9fbaaf830ce48cb31851bfa748af4bdbacf2fc132b762b163d"
+    },
+    {
+      "file": "fonts/TRMNL16-Regular.woff",
+      "source": "https://trmnl.com/fonts/TRMNL16-Regular.woff",
+      "sha256": "9fd3679cdc414470c32c4b2499477c624e71bea10f8264bbdfee022a5fc32acc"
+    },
+    {
+      "file": "fonts/TRMNL16-Regular.ttf",
+      "source": "https://trmnl.com/fonts/TRMNL16-Regular.ttf",
+      "sha256": "d442c4a1fa1973b2210f8745a604f0353ceb422448825445884b2b9719e43095"
+    },
+    {
+      "file": "fonts/TRMNL16-Bold.woff2",
+      "source": "https://trmnl.com/fonts/TRMNL16-Bold.woff2",
+      "sha256": "c787b13d35bb00b0239d9a95e0a6fe549804ae1a9af5b769a27c81146e9206e5"
+    },
+    {
+      "file": "fonts/TRMNL16-Bold.woff",
+      "source": "https://trmnl.com/fonts/TRMNL16-Bold.woff",
+      "sha256": "e5c22bb45541dbe5ef2015e3882c39b12f9105ea57dbdfd14745e1adfcd9caac"
+    },
+    {
+      "file": "fonts/TRMNL16-Bold.ttf",
+      "source": "https://trmnl.com/fonts/TRMNL16-Bold.ttf",
+      "sha256": "8907dc5ef0db8a14731ad24917db79fb5f2e019f0fc03b624cb675538d598958"
+    },
+    {
+      "file": "fonts/TRMNL21-Regular.woff2",
+      "source": "https://trmnl.com/fonts/TRMNL21-Regular.woff2",
+      "sha256": "8a9d39a5cc22c0bc64bbe5c69fd33a73bdefafab097446154db342a26eb01684"
+    },
+    {
+      "file": "fonts/TRMNL21-Regular.woff",
+      "source": "https://trmnl.com/fonts/TRMNL21-Regular.woff",
+      "sha256": "3d82b6d24a75367a23c1feb6f158b0098cfbeb4545eb520aae7ae229908d0b2e"
+    },
+    {
+      "file": "fonts/TRMNL21-Regular.ttf",
+      "source": "https://trmnl.com/fonts/TRMNL21-Regular.ttf",
+      "sha256": "1ece6f9200955d51f8e6c941e13fa3d121555e532a76f0c0b88664915c5c444f"
+    },
+    {
+      "file": "fonts/TRMNL21-Bold.woff2",
+      "source": "https://trmnl.com/fonts/TRMNL21-Bold.woff2",
+      "sha256": "7d31442286de794e4626d5eeb43152921ece56ac1455c548ed7bf455f4ede0fe"
+    },
+    {
+      "file": "fonts/TRMNL21-Bold.woff",
+      "source": "https://trmnl.com/fonts/TRMNL21-Bold.woff",
+      "sha256": "0cedf9c42d891a523ad8f0bac59e3da85f2f1d700a2169b38bf6582a540584e1"
+    },
+    {
+      "file": "fonts/TRMNL21-Bold.ttf",
+      "source": "https://trmnl.com/fonts/TRMNL21-Bold.ttf",
+      "sha256": "1f82225e7fbcfda2047f01184ac6f387ce8d3796ac9615cc38e4fa2048310b31"
+    },
+    {
+      "file": "fonts/NicoClean-Regular.ttf",
+      "source": "https://trmnl.com/fonts/NicoClean-Regular.ttf",
+      "sha256": "3cb07a74b6400d4e5085f885e9f45a1c42e991be6fb859cf9769032e4993369a"
+    },
+    {
+      "file": "fonts/NicoPups-Regular.ttf",
+      "source": "https://trmnl.com/fonts/NicoPups-Regular.ttf",
+      "sha256": "058d57cd0fb56111a7a88239bf6104115eaad5855771e719a738c4c16fd7d28b"
+    },
+    {
+      "file": "fonts/BlockKie.ttf",
+      "source": "https://trmnl.com/fonts/BlockKie.ttf",
+      "sha256": "69de3b46fe86271994c716b26d56498748331b87cb3b0b99077ffdd79d4b65c7"
+    },
+    {
+      "file": "fonts/Inter.ttf",
+      "source": "https://trmnl.com/fonts/Inter.ttf",
+      "sha256": "0be2399ea925f1f83ff974764761da9860ec50742ed29a5d4c1ffd0c5c7ac3a8"
+    },
+    {
+      "file": "fonts/Inter-Italic.ttf",
+      "source": "https://trmnl.com/fonts/Inter-Italic.ttf",
+      "sha256": "6136f73372fedc37b80fd1a8ec3e21734073ff17376f3672718f186779672e7a"
+    },
+    {
+      "file": "plugins.min.css.gz",
+      "source": "https://trmnl.com/css/3.3.1/plugins.min.css.gz",
+      "upstreamSha256": "1a79c7481a5c27e804efeeff0b33494a51d2e1100d26d0b1868d39a8cfe061e2"
+    },
+    {
+      "file": "plugins.min.js.gz",
+      "source": "https://trmnl.com/js/3.3.1/plugins.min.js.gz",
+      "upstreamSha256": "3df4ae450b17cf167122b6580c632d89eb0077ec5d8419f0beb8fb6026dc6079"
+    }
+  ]
+}

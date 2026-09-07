@@ -1,9 +1,13 @@
-import { getBrowser } from "@/lib/recipes/chrome-pool";
+import {
+	restrictHtmlNetwork,
+	withBrowserPage,
+} from "@/lib/recipes/render/browser-page";
 import { rewritePageImagesForDevice } from "@/lib/recipes/render/image-dither-intercept";
 import {
 	IMAGE_DITHER_OFF,
 	type ImageDitherPolicy,
 } from "@/lib/recipes/render/image-dither-policy";
+import { waitForRenderReady } from "@/lib/recipes/render/readiness";
 import { injectTrmnlCssIntoHtml } from "@/lib/trmnl/model-css";
 import type { TrmnlModel } from "@/lib/trmnl/types";
 
@@ -25,26 +29,33 @@ export async function renderHtmlToImage(
 	model?: TrmnlModel | null,
 	imageDitherPolicy?: ImageDitherPolicy,
 ): Promise<Buffer> {
-	const browser = await getBrowser("sandboxed");
-	const page = await browser.newPage();
-	try {
+	return withBrowserPage("sandboxed", async (page) => {
 		await page.setViewport({ width, height });
-		await page.setContent(injectTrmnlCssIntoHtml(html, model ?? null), {
-			waitUntil: "load",
-			timeout: 15000,
-		});
-		await page.waitForNetworkIdle({ timeout: 15000 });
+		await page.setContent(
+			restrictHtmlNetwork(
+				injectTrmnlCssIntoHtml(
+					html.replaceAll(
+						'"/trmnl-framework/',
+						`"http://127.0.0.1:${process.env.PORT || 3000}/trmnl-framework/`,
+					),
+					model ?? null,
+				),
+			),
+			{
+				waitUntil: "load",
+				timeout: 15000,
+			},
+		);
+		await waitForRenderReady(page);
 		const ditherPolicy = imageDitherPolicy ?? IMAGE_DITHER_OFF;
 		await rewritePageImagesForDevice(page, ditherPolicy);
 		if (ditherPolicy.mode !== "off") {
-			await page.waitForNetworkIdle({ timeout: 5000 }).catch(() => undefined);
+			await waitForRenderReady(page);
 		}
 		const screenshot = await page.screenshot({
 			type: "png",
 			clip: { x: 0, y: 0, width, height },
 		});
 		return Buffer.from(screenshot);
-	} finally {
-		await page.close();
-	}
+	});
 }

@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { getCurrentUserId } from "@/lib/auth/get-user";
 import {
 	DEFAULT_IMAGE_HEIGHT,
 	DEFAULT_IMAGE_WIDTH,
 } from "@/lib/recipes/constants";
-import { consumeBrowserRenderContext } from "@/lib/recipes/render/browser-context";
+import { getReactRecipeDefinition } from "@/lib/recipes/registry";
+import { readBrowserRenderContext } from "@/lib/recipes/render/browser-context";
+import { takeBrowserSnapshot } from "@/lib/recipes/render/browser-snapshot";
 import {
 	wrapLogicalCanvasToTarget,
 	wrapWithTrmnlCss,
@@ -38,9 +41,24 @@ export default async function RecipePreviewPage({
 		palette_id: paletteParam,
 		render_token: renderToken,
 	} = await searchParams;
-	const userId = consumeBrowserRenderContext(renderToken);
+	const context = renderToken
+		? readBrowserRenderContext(renderToken, slug)
+		: null;
+	if (renderToken && !context) notFound();
+	const userId = context ? context.userId : await getCurrentUserId();
+	if (!context && !userId) notFound();
 
-	const resolved = await resolveReactRecipe(slug, userId ?? undefined);
+	const snapshot = context?.snapshotId
+		? takeBrowserSnapshot(context.snapshotId, context.userId, slug)
+		: null;
+	if (context?.snapshotId && !snapshot) notFound();
+	const definitionFromSnapshot = snapshot
+		? await getReactRecipeDefinition(slug)
+		: null;
+	const resolved =
+		snapshot && definitionFromSnapshot
+			? { definition: definitionFromSnapshot, ...snapshot }
+			: await resolveReactRecipe(slug, userId ?? undefined);
 	if (!resolved) notFound();
 
 	const width = widthParam ? Number.parseInt(widthParam, 10) : undefined;
@@ -87,10 +105,17 @@ export default async function RecipePreviewPage({
 		targetWidth,
 		targetHeight,
 	);
-	return wrapWithTrmnlCss(
-		rendered,
-		profile?.model ?? null,
-		targetWidth,
-		targetHeight,
+	return (
+		<div
+			data-recipe-ready="true"
+			style={{ display: "flex", width: targetWidth, height: targetHeight }}
+		>
+			{wrapWithTrmnlCss(
+				rendered,
+				profile?.model ?? null,
+				targetWidth,
+				targetHeight,
+			)}
+		</div>
 	);
 }

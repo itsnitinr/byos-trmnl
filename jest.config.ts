@@ -3,8 +3,8 @@ import type { Config } from "jest";
 const config: Config = {
 	preset: "ts-jest",
 	testEnvironment: "node",
-	modulePathIgnorePatterns: ["<rootDir>/.next/"],
-	testPathIgnorePatterns: ["/node_modules/", "/.next/"],
+	modulePathIgnorePatterns: ["<rootDir>/\\.next[^/]*/"],
+	testPathIgnorePatterns: ["/node_modules/", "/\\.next[^/]*/"],
 	moduleNameMapper: {
 		"^@/(.*)$": "<rootDir>/$1",
 	},

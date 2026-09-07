@@ -242,6 +242,7 @@ export interface Recipes {
 }
 
 export interface ScreenConfigs {
+	data_refresh_seconds: number | null;
 	created_at: Generated<Timestamp | null>;
 	id: Generated<string>;
 	/**

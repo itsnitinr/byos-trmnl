@@ -117,7 +117,10 @@ export function createScreenProfile({
 		parseNumber(vars["--pixel-ratio"]) ?? fallbackPixelRatio(model);
 	const ditherPixelRatio =
 		parseNumber(vars["--dither-pixel-ratio"]) ?? pixelRatio;
-	const uiScale = parseNumber(vars["--ui-scale"]) ?? 1;
+	const uiScale =
+		parseNumber(vars["--device-ui-scale"]) ??
+		parseNumber(vars["--ui-scale"]) ??
+		1;
 	const gapScale = parseNumber(vars["--gap-scale"]) ?? 1;
 
 	const baseLogicalWidth =

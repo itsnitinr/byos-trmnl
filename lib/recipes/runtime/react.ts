@@ -1,9 +1,16 @@
 import { cache } from "react";
 import { z } from "zod";
-import { getScreenParams } from "@/app/actions/screens-params";
+import { getCurrentUserId } from "@/lib/auth/get-user";
 import { getReactRecipeDefinition } from "@/lib/recipes/registry";
 import type { AnyRecipeDefinition } from "@/lib/recipes/types";
-import { zodObjectToParamDefinitions } from "@/lib/recipes/zod-form";
+import { loadRecipeConfig } from "./config";
+import {
+	type DataFreshness,
+	recipeDataKey,
+	resolveCachedData,
+} from "./data-cache";
+import { withRecipeDeadline } from "./fetch-context";
+import { defaultDataRefreshSeconds } from "./refresh-settings";
 
 /**
  * React-recipe runtime: given a slug + (optional) userId, resolve the
@@ -28,9 +35,8 @@ export type ResolvedReactRecipe = {
 	definition: AnyRecipeDefinition;
 	params: Record<string, unknown>;
 	data: Record<string, unknown>;
+	freshness?: DataFreshness;
 };
-
-const FETCH_TIMEOUT_MS = 10_000;
 
 function safeParseWithDefaults(
 	schema: z.ZodObject,
@@ -74,38 +80,27 @@ function safeParseDataWithDefaults(
 	return {};
 }
 
-async function callGetDataWithTimeout(
-	getData: NonNullable<AnyRecipeDefinition["getData"]>,
-	params: Record<string, unknown>,
-): Promise<unknown> {
-	return await Promise.race([
-		getData(params),
-		new Promise((_, reject) => {
-			setTimeout(
-				() => reject(new Error("Recipe data fetch timeout")),
-				FETCH_TIMEOUT_MS,
-			);
-		}),
-	]);
-}
-
 export const resolveReactRecipe = cache(
 	async (
 		slug: string,
 		userId?: string,
 	): Promise<ResolvedReactRecipe | null> => {
+		userId ??= (await getCurrentUserId()) ?? undefined;
 		const definition = await getReactRecipeDefinition(slug);
 		if (!definition) return null;
 
-		// Read user-saved param overrides. Pass paramDefinitions so
-		// getScreenParams can return only fields declared by the recipe schema.
-		const paramDefinitions = zodObjectToParamDefinitions(
-			definition.paramsSchema,
+		const config =
+			definition.getData || Object.keys(definition.paramsSchema.shape).length
+				? await loadRecipeConfig(slug, userId)
+				: { params: {}, dataRefreshSeconds: null };
+		const storedOverrides = Object.fromEntries(
+			Object.entries(config.params).filter(
+				([, value]) =>
+					value !== undefined &&
+					value !== null &&
+					!(typeof value === "string" && !value.trim()),
+			),
 		);
-		const storedOverrides =
-			Object.keys(paramDefinitions).length > 0
-				? await getScreenParams(slug, paramDefinitions, userId)
-				: {};
 
 		const params = safeParseWithDefaults(
 			definition.paramsSchema,
@@ -114,23 +109,37 @@ export const resolveReactRecipe = cache(
 		);
 
 		let data: Record<string, unknown>;
+		let freshness: DataFreshness | undefined;
 		if (definition.getData) {
-			try {
-				const fetched = await callGetDataWithTimeout(
-					definition.getData,
+			const getData = definition.getData;
+			const refreshSeconds =
+				config.dataRefreshSeconds ?? defaultDataRefreshSeconds(slug);
+			const result = await resolveCachedData(
+				recipeDataKey(userId, slug, {
 					params,
-				);
-				data = safeParseDataWithDefaults(definition.dataSchema, fetched);
-			} catch (error) {
-				console.error(`[recipe:${slug}] getData failed:`, error);
-				data = safeParseDataWithDefaults(definition.dataSchema, {});
-			}
+					version: definition.meta.version,
+				}),
+				async () => {
+					const fetched = await withRecipeDeadline((signal) =>
+						getData(params, { signal }),
+					);
+					const validated = definition.dataSchema.parse(fetched);
+					if (
+						!validated ||
+						typeof validated !== "object" ||
+						Array.isArray(validated)
+					)
+						throw new Error("Recipe data must be an object");
+					return validated as Record<string, unknown>;
+				},
+				refreshSeconds * 1000,
+			);
+			data = result.data;
+			freshness = result.freshness;
 		} else {
-			// No fetch → render against the params themselves (parsed via
-			// dataSchema so wrappers around paramsSchema still apply).
 			data = safeParseDataWithDefaults(definition.dataSchema, params);
 		}
 
-		return { definition, params, data };
+		return { definition, params, data, freshness };
 	},
 );

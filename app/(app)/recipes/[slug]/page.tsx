@@ -11,12 +11,12 @@ import { PageTemplate } from "@/components/common/page-template";
 import { DeleteRecipeButton } from "@/components/recipes/delete-recipe-button";
 import { RecipePreviewStage } from "@/components/recipes/recipe-preview-stage";
 import RecipeProps from "@/components/recipes/recipe-props";
+import { RecipeRefreshControl } from "@/components/recipes/recipe-refresh-control";
 import { ScreenParamsForm } from "@/components/recipes/screen-params-form";
 import { Badge } from "@/components/ui/badge";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
-import { listAllRecipes } from "@/lib/recipes/catalog";
 import {
 	DEFAULT_IMAGE_HEIGHT,
 	DEFAULT_IMAGE_WIDTH,
@@ -27,7 +27,9 @@ import {
 	fetchLiquidRecipeSettings,
 	renderLiquidRecipe,
 } from "@/lib/recipes/liquid-renderer";
+import { listReactRecipes } from "@/lib/recipes/registry";
 import { getRendererType } from "@/lib/recipes/render/rasterize";
+import { invalidateRecipeData } from "@/lib/recipes/runtime/data-cache";
 import { resolveReactRecipe } from "@/lib/recipes/runtime/react";
 import { zodObjectToParamDefinitions } from "@/lib/recipes/zod-form";
 import { listModels, listPalettes } from "@/lib/trmnl/registry";
@@ -38,13 +40,15 @@ export async function generateMetadata() {
 
 async function refreshData(slug: string) {
 	"use server";
-	await new Promise((resolve) => setTimeout(resolve, 500));
+	const userId = await getCurrentUserId();
+	if (!userId) throw new Error("Unauthorized");
+	invalidateRecipeData(userId, slug);
 	revalidateTag(slug, "max");
 }
 
 export async function generateStaticParams() {
 	try {
-		const recipes = await listAllRecipes();
+		const recipes = await listReactRecipes();
 		if (recipes.length > 0) {
 			return recipes.map((recipe) => ({ slug: recipe.slug }));
 		}
@@ -332,6 +336,7 @@ export default async function RecipePage({
 						/>
 					)}
 
+					{definition.getData && <RecipeRefreshControl slug={slug} />}
 					{definition.getData && (
 						<SectionCard label="Data">
 							<RecipeProps
@@ -426,6 +431,7 @@ export default async function RecipePage({
 					}
 				/>
 
+				<RecipeRefreshControl slug={slug} />
 				{hasParams && (
 					<ScreenParamsForm
 						slug={slug}

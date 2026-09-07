@@ -9,11 +9,18 @@ import {
 import { db } from "@/lib/database/db";
 import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
+import { fetchPublicResource } from "@/lib/network/public-fetch";
 import { logger } from "./logger";
+import {
+	type DataFreshness,
+	recipeDataKey,
+	resolveCachedData,
+} from "./runtime/data-cache";
+import { loadRecipeRefreshSettings } from "./runtime/refresh-settings";
 import type { RecipeParamDefinitions } from "./zod-form";
 
-const TRMNL_CSS_URL = "https://trmnl.com/css/latest/plugins.css";
-const TRMNL_JS_URL = "https://trmnl.com/js/latest/plugins.js";
+const TRMNL_CSS_URL = "/trmnl-framework/3.3.1/plugins.css";
+const TRMNL_JS_URL = "/trmnl-framework/3.3.1/plugins.js";
 
 export type CustomField = {
 	keyname?: string;
@@ -243,16 +250,12 @@ async function fetchPollingData(
 			const controller = new AbortController();
 			const timeout = setTimeout(() => controller.abort(), 10000);
 			try {
-				const response = await fetch(url, {
+				const response = await fetchPublicResource(url, {
 					signal: controller.signal,
-					headers: { "User-Agent": "BYOS/1.0" },
-					redirect: "error",
+					maxBytes: 2 * 1024 * 1024,
+					redirects: 0,
 				});
-				if (!response.ok) {
-					logger.warn(`Polling URL ${url} returned ${response.status}`);
-					return { index, result: null };
-				}
-				const json = await response.json();
+				const json = JSON.parse(response.body.toString());
 				return { index, result: json };
 			} catch (error) {
 				logger.error(`Error fetching polling URL ${url}:`, error);
@@ -263,6 +266,12 @@ async function fetchPollingData(
 		}),
 	);
 
+	if (
+		results.some(
+			(result) => result.status === "rejected" || result.value.result === null,
+		)
+	)
+		throw new Error("Recipe polling source unavailable");
 	for (const settled of results) {
 		if (settled.status === "fulfilled" && settled.value.result !== null) {
 			data[`IDX_${settled.value.index}`] = settled.value.result;
@@ -359,6 +368,16 @@ export async function fetchLiquidRecipeSettings(
 	return settingsContent ? parseSettings(settingsContent) : null;
 }
 
+export async function loadLiquidRecipeSource(slug: string, userId?: string) {
+	const files = await fetchRecipeFiles(slug, userId);
+	if (!files) return null;
+	const content = findTemplateFile(files, "settings.yml");
+	return {
+		files,
+		settings: content ? parseSettings(content) : ({} as SettingsYml),
+	};
+}
+
 /**
  * Register custom filters matching TRMNL/Laravel's Liquid extensions.
  */
@@ -439,16 +458,13 @@ export async function renderLiquidRecipe(
 	slug: string,
 	customFieldOverrides?: Record<string, unknown>,
 	userId?: string,
+	preparedSource?: NonNullable<
+		Awaited<ReturnType<typeof loadLiquidRecipeSource>>
+	>,
 ): Promise<LiquidRenderResult | null> {
-	const files = await fetchRecipeFiles(slug, userId);
-	if (!files) {
-		logger.warn(`No liquid recipe files found for slug: ${slug}`);
-		return null;
-	}
-
-	// Parse settings
-	const settingsContent = findTemplateFile(files, "settings.yml");
-	const settings = settingsContent ? parseSettings(settingsContent) : {};
+	const source = preparedSource ?? (await loadLiquidRecipeSource(slug, userId));
+	if (!source) return null;
+	const { files, settings } = source;
 
 	// Build custom fields values from defaults, then apply overrides
 	const customFieldValues = {
@@ -459,6 +475,7 @@ export async function renderLiquidRecipe(
 	// Resolve polling URL through Liquid so templates with {% for %} / {% assign %}
 	// are expanded into actual URLs before fetching
 	let pollingData: Record<string, unknown> = {};
+	let freshness: DataFreshness | undefined;
 	if (settings.polling_url) {
 		try {
 			const urlEngine = new Liquid({
@@ -469,9 +486,20 @@ export async function renderLiquidRecipe(
 				settings.polling_url,
 				customFieldValues,
 			);
-			pollingData = await fetchPollingData(resolvedUrl);
+			const refresh = await loadRecipeRefreshSettings(slug, userId);
+			const cached = await resolveCachedData(
+				recipeDataKey(userId, slug, {
+					customFieldValues,
+					resolvedUrl,
+				}),
+				() => fetchPollingData(resolvedUrl),
+				refresh.seconds * 1000,
+			);
+			pollingData = cached.data;
+			freshness = cached.freshness;
 		} catch (error) {
 			logger.warn(`Error resolving polling URL template: `, error);
+			throw error;
 		}
 	}
 
@@ -568,6 +596,7 @@ export async function renderLiquidRecipe(
 		</div>
 	</div>
     </div>
+    ${freshness?.stale ? `<div style="position:fixed;bottom:0;left:0;right:0;background:white;color:black;font:12px sans-serif;padding:6px;z-index:9999">Source unavailable · Updated ${new Date(freshness.updatedAt).toISOString()} UTC</div>` : ""}
   </body>
 </html>`;
 		return { html, settings };

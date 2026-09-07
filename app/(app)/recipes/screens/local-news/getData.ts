@@ -1,4 +1,5 @@
-import { unstable_cache } from "next/cache";
+import { recipeFetch as fetch } from "@/lib/recipes/runtime/fetch-context";
+import { recipeSourceCache as unstable_cache } from "@/lib/recipes/runtime/source-cache";
 
 export const dynamic = "force-dynamic";
 

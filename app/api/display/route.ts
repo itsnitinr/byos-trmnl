@@ -1,5 +1,4 @@
-import { db } from "@/lib/database/db";
-import { withExplicitUserScope } from "@/lib/database/scoped-db";
+import { afterResponse } from "@/lib/cache/after-response";
 import { checkDbConnection } from "@/lib/database/utils";
 import {
 	DISPLAY_FALLBACK_REFRESH_SECONDS,
@@ -7,7 +6,11 @@ import {
 } from "@/lib/device/defaults";
 import { parseRequestHeaders } from "@/lib/device/request-headers";
 import { selectDisplayForDevice } from "@/lib/display/select";
-import { getLatestFirmware, isUpdateAvailable } from "@/lib/firmware";
+import {
+	getLatestFirmware,
+	isUpdateAvailable,
+	peekLatestFirmware,
+} from "@/lib/firmware";
 import { logError, logInfo } from "@/lib/logger";
 import { DeviceDisplayMode } from "@/lib/mixup/constants";
 import {
@@ -21,7 +24,6 @@ import {
 	calculateRefreshRate,
 	findOrCreateDevice,
 	getActivePlaylistItem,
-	precacheImageInBackground,
 	updateDeviceStatus,
 } from "./utils";
 
@@ -93,13 +95,14 @@ export async function GET(request: Request) {
 
 		let { screen: screenToDisplay, imageUrl } = selection;
 		let dynamicRefreshRate: number;
+		let nextPlaylistIndex: number | undefined;
 
 		switch (device.display_mode) {
 			case DeviceDisplayMode.PLAYLIST: {
 				if (device.playlist_id) {
 					const activeItem = await getActivePlaylistItem(
 						device.playlist_id,
-						device.current_playlist_index || 0,
+						device.current_playlist_index ?? -1,
 						device.timezone || "UTC",
 						device.user_id,
 					);
@@ -107,17 +110,7 @@ export async function GET(request: Request) {
 					if (activeItem) {
 						screenToDisplay = activeItem.screen_id;
 						dynamicRefreshRate = activeItem.duration;
-						const updatePlaylistIndex = (scopedDb: typeof db) =>
-							scopedDb
-								.updateTable("devices")
-								.set({ current_playlist_index: activeItem.order_index })
-								.where("id", "=", device.id.toString())
-								.execute();
-						if (device.user_id) {
-							await withExplicitUserScope(device.user_id, updatePlaylistIndex);
-						} else {
-							await updatePlaylistIndex(db);
-						}
+						nextPlaylistIndex = activeItem.order_index;
 					} else {
 						logInfo("No active playlist item found", {
 							source: "api/display",
@@ -193,8 +186,12 @@ export async function GET(request: Request) {
 				break;
 		}
 
-		precacheImageInBackground(imageUrl, device.friendly_id);
-		updateDeviceStatus(device, headers, dynamicRefreshRate);
+		await updateDeviceStatus(
+			device,
+			headers,
+			dynamicRefreshRate,
+			nextPlaylistIndex,
+		);
 
 		logInfo("Display request successful", {
 			source: "api/display",
@@ -215,7 +212,10 @@ export async function GET(request: Request) {
 			temperature_profile: device.temperature_profile ?? "default",
 		};
 
-		const latestFirmware = await getLatestFirmware();
+		const latestFirmware = peekLatestFirmware();
+		afterResponse(async () => {
+			await getLatestFirmware();
+		});
 		if (
 			latestFirmware &&
 			isUpdateAvailable(device.firmware_version, latestFirmware.version)

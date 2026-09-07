@@ -21,6 +21,8 @@ import type { RecipeRenderSettings } from "../types";
 
 export type RasterizeOptions = {
 	slug: string;
+	freshness?: import("../runtime/data-cache").DataFreshness;
+	snapshot?: import("./browser-snapshot").RecipeDataSnapshot;
 	imageWidth: number;
 	imageHeight: number;
 	layoutWidth?: number;
@@ -45,6 +47,7 @@ export type RasterizeOptions = {
 
 export type RasterizeResults = {
 	png: Buffer | null;
+	cacheStatus?: import("@/lib/cache/bounded-cache").CacheStatus;
 	/** Echoed back so the device pass can honor settings like `paletteReduction`. */
 	renderSettings?: RecipeRenderSettings | null;
 };
@@ -113,6 +116,7 @@ export async function rasterize(
 						userId,
 						captureWidth: target.width,
 						captureHeight: target.height,
+						snapshot: options.snapshot,
 					},
 				);
 			} else {

@@ -1341,6 +1341,14 @@ CREATE POLICY plugin_settings_capability_select_policy ON plugin_settings
         AND uuid = (select current_setting('app.capability_lookup_uuid', true))
     );`,
 	},
+	"0022_add_recipe_data_refresh": {
+		title: "Per-recipe data refresh intervals",
+		description:
+			"Allows each user to set a recipe's data refresh interval independently of device wakeups.",
+		sql: `ALTER TABLE public.screen_configs
+  ADD COLUMN IF NOT EXISTS data_refresh_seconds INTEGER
+  CHECK (data_refresh_seconds BETWEEN 0 AND 86400);`,
+	},
 	validate_schema: {
 		title: "Validate Database Schema",
 		description:

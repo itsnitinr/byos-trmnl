@@ -1,4 +1,5 @@
 import qrcode from "qrcode-generator";
+import { recipeFetch as fetch } from "@/lib/recipes/runtime/fetch-context";
 
 // Live data — always fetch fresh.
 export const dynamic = "force-dynamic";

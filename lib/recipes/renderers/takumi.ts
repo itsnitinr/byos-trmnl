@@ -4,6 +4,7 @@ import { fromJsx } from "@takumi-rs/helpers/jsx";
 import React from "react";
 import sharp from "sharp";
 import { getTakumiFonts } from "@/lib/fonts";
+import { cachedPublicResource } from "@/lib/network/resource-cache";
 
 const renderer = new Renderer({ fonts: getTakumiFonts() });
 
@@ -41,19 +42,18 @@ export async function renderWithTakumi(
 	const urls = extractResourceUrls(node);
 	let fetchedResources: Awaited<ReturnType<typeof fetchResources>> = [];
 	if (urls.length > 0) {
-		try {
-			fetchedResources = await fetchResources(urls);
-		} catch (error) {
-			if (
-				process.env.NODE_ENV !== "production" ||
-				process.env.DEBUG === "true"
-			) {
-				console.warn(
-					"Failed to fetch some external resources, rendering without them",
-					error,
-				);
-			}
-		}
+		fetchedResources = await fetchResources(urls, {
+			fetch: async (url, init) => {
+				if (url.startsWith("data:")) return fetch(url, init);
+				const resource = await cachedPublicResource(url);
+				return new Response(new Uint8Array(resource.body), {
+					headers: {
+						"Content-Type":
+							resource.headers["content-type"] ?? "application/octet-stream",
+					},
+				});
+			},
+		});
 	}
 	// Render raw RGBA pixels and encode the PNG with sharp instead of asking
 	// Takumi for `format: "png"`. Takumi 1.8.6's PNG encoder emits a corrupt

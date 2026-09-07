@@ -1,6 +1,12 @@
 import type { CookieData } from "puppeteer-core";
-import { getBrowser } from "@/lib/recipes/chrome-pool";
 import { createBrowserRenderContext } from "@/lib/recipes/render/browser-context";
+import { withBrowserPage } from "@/lib/recipes/render/browser-page";
+import {
+	discardBrowserSnapshot,
+	type RecipeDataSnapshot,
+	storeBrowserSnapshot,
+} from "@/lib/recipes/render/browser-snapshot";
+import { waitForRenderReady } from "@/lib/recipes/render/readiness";
 
 /**
  * Parse a Cookie header string into individual cookie objects.
@@ -33,9 +39,8 @@ function parseCookies(
  * authenticated render could carry session cookies into an anonymous
  * device-image render fired moments later.
  *
- * Uses the "trusted" Chrome profile — web security is disabled so the preview
- * page can freely reference cross-origin images. This is only safe because
- * the page is our own same-origin Next.js route.
+ * Uses the "trusted" Chrome profile — web security stays enabled.
+ * External resources are fetched through a bounded public-network loader.
  */
 export type RenderWithBrowserOptions = {
 	model?: string | null;
@@ -43,6 +48,7 @@ export type RenderWithBrowserOptions = {
 	userId?: string | null;
 	captureWidth?: number;
 	captureHeight?: number;
+	snapshot?: RecipeDataSnapshot;
 };
 
 export async function renderWithBrowser(
@@ -60,63 +66,67 @@ export async function renderWithBrowser(
 	});
 	if (options.model) params.set("model", options.model);
 	if (options.paletteId) params.set("palette_id", options.paletteId);
-	if (options.userId) {
-		params.set("render_token", createBrowserRenderContext(options.userId));
-	}
+	const snapshotId = options.snapshot
+		? storeBrowserSnapshot(options.snapshot, options.userId ?? null, slug)
+		: undefined;
+	params.set(
+		"render_token",
+		createBrowserRenderContext(options.userId, slug, snapshotId),
+	);
 	const url = `${baseUrl}/recipes/${slug}/preview?${params.toString()}`;
 	const captureWidth = options.captureWidth ?? width;
 	const captureHeight = options.captureHeight ?? height;
 
-	const browser = await getBrowser("trusted");
-	const context = await browser.createBrowserContext();
-	const page = await context.newPage();
-
 	try {
-		if (cookies) {
-			const parsed = parseCookies(cookies);
-			const domain = new URL(url).hostname;
-			const cookiesToSet: CookieData[] = parsed.map((c) => ({
-				name: c.name,
-				value: c.value,
-				domain,
-				path: "/",
-			}));
-			// Cookies are set on the per-render context — they go away with it.
-			await context.setCookie(...cookiesToSet);
-		}
+		return await withBrowserPage(
+			"trusted",
+			async (page) => {
+				const context = page.browserContext();
+				if (cookies) {
+					const parsed = parseCookies(cookies);
+					const domain = new URL(url).hostname;
+					const cookiesToSet: CookieData[] = parsed.map((c) => ({
+						name: c.name,
+						value: c.value,
+						domain,
+						path: "/",
+					}));
+					// Cookies are set on the per-render context — they go away with it.
+					await context.setCookie(...cookiesToSet);
+				}
 
-		// Force light mode — headless Chrome can default to dark, which breaks
-		// Tailwind v4 color tokens that rely on prefers-color-scheme.
-		await page.emulateMediaFeatures([
-			{ name: "prefers-color-scheme", value: "light" },
-		]);
-		await page.setViewport({
-			width: captureWidth,
-			height: captureHeight,
-			deviceScaleFactor: 1,
-		});
-		await page.goto(url, { waitUntil: "domcontentloaded" });
-		await page
-			.waitForNetworkIdle({ idleTime: 500, timeout: 5000 })
-			.catch(() => {
-				// Some recipes include slow third-party assets; capture the server-rendered
-				// page rather than failing the whole device render.
-			});
-		const screenshot = await page.screenshot({
-			type: "png",
-			clip: { x: 0, y: 0, width: captureWidth, height: captureHeight },
-		});
-		return Buffer.from(screenshot);
+				// Force light mode — headless Chrome can default to dark, which breaks
+				// Tailwind v4 color tokens that rely on prefers-color-scheme.
+				await page.emulateMediaFeatures([
+					{ name: "prefers-color-scheme", value: "light" },
+				]);
+				await page.setViewport({
+					width: captureWidth,
+					height: captureHeight,
+					deviceScaleFactor: 1,
+				});
+				const response = await page.goto(url, {
+					waitUntil: "domcontentloaded",
+					timeout: 15_000,
+				});
+				if (
+					!response?.ok() ||
+					new URL(page.url()).pathname !== new URL(url).pathname
+				) {
+					throw new Error(
+						"Recipe preview returned an error or unexpected redirect",
+					);
+				}
+				await waitForRenderReady(page, true);
+				const screenshot = await page.screenshot({
+					type: "png",
+					clip: { x: 0, y: 0, width: captureWidth, height: captureHeight },
+				});
+				return Buffer.from(screenshot);
+			},
+			url,
+		);
 	} finally {
-		try {
-			await page.close();
-		} catch {
-			// page.close can race with context.close; the latter is the real cleanup.
-		}
-		try {
-			await context.close();
-		} catch {
-			// If the browser is already gone, the pool will reopen on next call.
-		}
+		if (snapshotId) discardBrowserSnapshot(snapshotId);
 	}
 }

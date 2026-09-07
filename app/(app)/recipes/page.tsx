@@ -1,5 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageTemplate } from "@/components/common/page-template";
 import { ScreenPreviewImage } from "@/components/common/screen-preview-image";
@@ -155,6 +156,7 @@ const CategorySection = ({
 };
 
 async function RecipesGrid() {
+	await connection();
 	const allRecipes = await listAllRecipes();
 
 	const recipesByCategory = allRecipes.reduce(

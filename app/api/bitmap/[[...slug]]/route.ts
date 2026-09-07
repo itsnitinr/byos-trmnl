@@ -14,7 +14,9 @@ import {
 } from "@/lib/recipes/constants";
 import { logger } from "@/lib/recipes/logger";
 import { renderRecipeForDevice } from "@/lib/recipes/recipe-renderer";
+import { ImageBudgetError } from "@/lib/render/device-image";
 import { stripImageExtension } from "@/lib/render/device-image-url";
+import { diagnoseRender, renderTimingHeader } from "@/lib/render/diagnostics";
 import { renderErrorImage } from "@/lib/render/error-image";
 import {
 	parseImageRequest,
@@ -65,7 +67,7 @@ export async function GET(
 				height: imageHeight,
 				profile,
 			});
-			return imageResponse(image);
+			return imageResponse(image, 200, req);
 		}
 
 		const imageWidth = imageRequest.width ?? profile.model.width;
@@ -73,14 +75,21 @@ export async function GET(
 		const oversized = rejectOversizedImageArea(imageWidth, imageHeight);
 		if (oversized) return oversized;
 
-		const image = await renderRecipeForDevice({
-			slug: recipeSlug,
-			profile,
-			width: imageWidth,
-			height: imageHeight,
+		const { image, trace } = await diagnoseRender(
 			userId,
-			cookies: cookieHeader || undefined,
-		});
+			recipeSlug,
+			imageWidth,
+			imageHeight,
+			() =>
+				renderRecipeForDevice({
+					slug: recipeSlug,
+					profile,
+					width: imageWidth,
+					height: imageHeight,
+					userId,
+					cookies: cookieHeader || undefined,
+				}),
+		);
 
 		if (!image?.buffer.length) {
 			logger.warn(`Failed to generate device image for ${recipeSlug}`);
@@ -93,8 +102,13 @@ export async function GET(
 			return imageResponse(errorImage, 500);
 		}
 
-		return imageResponse(image);
+		const response = imageResponse(image, 200, req);
+		response.headers.set("Server-Timing", renderTimingHeader(trace));
+		response.headers.set("X-TRMNL-Render-ID", trace.id);
+		return response;
 	} catch (error) {
+		if (error instanceof ImageBudgetError)
+			return Response.json({ error: error.message }, { status: 422 });
 		logger.error("Error generating image:", error);
 		const { searchParams } = new URL(req.url);
 		const imageRequest = parseImageRequest(searchParams);

@@ -6,7 +6,7 @@ import puppeteer, { type Browser } from "puppeteer-core";
  *
  * - "sandboxed": minimal flags, web-security ON. Use for user-authored content
  *   (Liquid recipes) where we must not let the page reach internal origins.
- * - "trusted": permissive flags including --disable-web-security. Use only for
+ * - "trusted": same security flags, separate browser lifetime. Use for
  *   same-origin captures of our own Next.js pages (React recipe previews).
  */
 export type ChromeProfile = "sandboxed" | "trusted";
@@ -19,16 +19,7 @@ const SANDBOXED_ARGS = [
 	"--hide-scrollbars",
 ];
 
-const TRUSTED_ARGS = [
-	"--no-sandbox",
-	"--disable-setuid-sandbox",
-	"--disable-dev-shm-usage",
-	"--disable-gpu",
-	"--hide-scrollbars",
-	"--disable-accelerated-2d-canvas",
-	"--disable-web-security",
-	"--disable-features=IsolateOrigins,site-per-process",
-];
+const TRUSTED_ARGS = SANDBOXED_ARGS;
 
 type Resolved =
 	| { mode: "connect"; browserURL: string }

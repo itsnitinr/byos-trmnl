@@ -5,7 +5,10 @@ import postgres from "postgres";
 import { auth } from "@/lib/auth/auth";
 import { getCurrentUser } from "@/lib/auth/get-user";
 import { SQL_STATEMENTS } from "@/lib/database/sql-statements";
-import { getDatabaseSetupStatus } from "@/lib/database/utils";
+import {
+	getDatabaseSetupStatus,
+	invalidateDbReadiness,
+} from "@/lib/database/utils";
 
 export type SqlExecutionStatus =
 	| "idle"
@@ -312,6 +315,7 @@ export async function executeSqlStatements(): Promise<SqlExecutionState> {
 			error: error instanceof Error ? error.message : String(error),
 		};
 	} finally {
+		invalidateDbReadiness();
 		// Close the main connection
 		await sql.end();
 	}

@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import { DbStatus } from "../types";
 import { db } from "./db";
+import { createReadinessCache } from "./readiness-cache";
 import { SQL_STATEMENTS } from "./sql-statements";
 
 const REQUIRED_MIGRATIONS = Object.keys(SQL_STATEMENTS).filter(
@@ -64,7 +65,13 @@ async function adminUserExists(): Promise<boolean> {
  * adding a new table is a one-step change (write the migration, run
  * `pnpm generate:sql`).
  */
-export async function checkDbConnection(): Promise<DbStatus> {
+async function validateDatabase(): Promise<DbStatus> {
+	if (!process.env.DATABASE_URL)
+		return {
+			ready: false,
+			databaseConfigured: false,
+			error: "DATABASE_URL is not set",
+		};
 	try {
 		await sql`SELECT 1`.execute(db);
 
@@ -92,6 +99,11 @@ export async function checkDbConnection(): Promise<DbStatus> {
 		};
 	}
 }
+
+const readiness = createReadinessCache(validateDatabase);
+export const invalidateDbReadiness = () => readiness.invalidate();
+export const checkDbConnection = () =>
+	process.env.DATABASE_URL ? readiness.get() : validateDatabase();
 
 export async function getDbStatus(): Promise<DbStatus> {
 	if (!process.env.DATABASE_URL) {

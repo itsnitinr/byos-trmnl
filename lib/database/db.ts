@@ -12,6 +12,9 @@ export const db = new Kysely<DB>({
 	dialect: new PostgresDialect({
 		pool: new Pool({
 			connectionString: process.env.DATABASE_URL,
+			connectionTimeoutMillis: 5000,
+			statement_timeout: 10_000,
+			idleTimeoutMillis: 30_000,
 			ssl: process.env.DATABASE_URL?.includes("sslmode=disable")
 				? false
 				: process.env.NODE_ENV === "production"

@@ -1,18 +1,19 @@
 import { createElement } from "react";
+import { getCurrentUserId } from "@/lib/auth/get-user";
 import {
 	type RenderDeviceImageResult,
 	renderDeviceImage,
 } from "@/lib/render/device-image";
+import { cachedRasterize } from "@/lib/render/frame-cache";
 import type { DeviceProfile } from "@/lib/trmnl/device-profile";
 import { createScreenProfile } from "@/lib/trmnl/screen-profile";
 import type { TrmnlModel, TrmnlPalette } from "@/lib/trmnl/types";
 import {
 	customFieldsToParamDefinitions,
-	fetchLiquidRecipeSettings,
-	isLiquidRecipe,
+	loadLiquidRecipeSource,
 	renderLiquidRecipe,
 } from "./liquid-renderer";
-import { type RasterizeResults, rasterize } from "./render/rasterize";
+import { type RasterizeResults } from "./render/rasterize";
 import { resolveReactRecipe } from "./runtime/react";
 
 /**
@@ -56,13 +57,14 @@ export async function renderRecipeToImage({
 	paletteId,
 	deviceProfile,
 }: RenderRecipeArgs): Promise<RasterizeResults> {
+	userId ??= await getCurrentUserId();
 	const profile =
 		deviceProfile ?? (model ? { model, palette: palette ?? null } : null);
 
 	// React path
 	const resolved = await resolveReactRecipe(slug, userId ?? undefined);
 	if (resolved) {
-		const { definition, params, data } = resolved;
+		const { definition, params, data, freshness } = resolved;
 		const screen = createScreenProfile({
 			width: imageWidth,
 			height: imageHeight,
@@ -76,39 +78,50 @@ export async function renderRecipeToImage({
 			params,
 			data,
 		});
-		return rasterize({
-			slug,
-			element,
-			imageWidth,
-			imageHeight,
-			layoutWidth: screen.logicalWidth,
-			layoutHeight: screen.logicalHeight,
-			cookies,
-			model,
-			profile,
-			paletteId,
-			userId,
-			renderSettings: definition.meta.renderSettings ?? null,
-		});
+		return cachedRasterize(
+			{
+				slug,
+				element,
+				imageWidth,
+				imageHeight,
+				layoutWidth: screen.logicalWidth,
+				layoutHeight: screen.logicalHeight,
+				cookies,
+				model,
+				profile,
+				paletteId,
+				userId,
+				renderSettings: definition.meta.renderSettings ?? null,
+				freshness,
+				snapshot: { params, data, freshness },
+			},
+			{
+				params,
+				data,
+				version: definition.meta.version,
+				edition: definition.getRenderCacheKey?.(params, data),
+			},
+		);
 	}
 
-	// Liquid path
-	if (await isLiquidRecipe(slug, userId ?? undefined)) {
-		const html = await buildLiquidHtml(slug, userId ?? undefined);
-		if (html === null) {
-			throw new Error(`Liquid recipe ${slug} did not produce HTML`);
-		}
-		return rasterize({
-			slug,
+	// Liquid path: source lookup also establishes existence; reuse its files for settings and rendering.
+	const html = await buildLiquidHtml(slug, userId ?? undefined);
+	if (html !== null) {
+		return cachedRasterize(
+			{
+				slug,
+				html,
+				imageWidth,
+				imageHeight,
+				cookies,
+				model,
+				profile,
+				paletteId,
+				renderSettings: null,
+				userId,
+			},
 			html,
-			imageWidth,
-			imageHeight,
-			cookies,
-			model,
-			profile,
-			paletteId,
-			renderSettings: null,
-		});
+		);
 	}
 
 	// Unknown slug
@@ -165,12 +178,19 @@ async function buildLiquidHtml(
 	userId?: string,
 ): Promise<string | null> {
 	let customFieldOverrides: Record<string, unknown> | undefined;
-	const settings = await fetchLiquidRecipeSettings(slug, userId);
+	const source = await loadLiquidRecipeSource(slug, userId);
+	if (!source) return null;
+	const { settings } = source;
 	if (settings?.custom_fields?.length) {
 		const definitions = customFieldsToParamDefinitions(settings.custom_fields);
 		const { getScreenParams } = await import("@/app/actions/screens-params");
 		customFieldOverrides = await getScreenParams(slug, definitions, userId);
 	}
-	const result = await renderLiquidRecipe(slug, customFieldOverrides, userId);
+	const result = await renderLiquidRecipe(
+		slug,
+		customFieldOverrides,
+		userId,
+		source,
+	);
 	return result?.html ?? null;
 }
