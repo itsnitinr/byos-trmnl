@@ -65,7 +65,7 @@ export async function GET(
 				height: imageHeight,
 				profile,
 			});
-			return imageResponse(image);
+			return imageResponse(image, 200, req);
 		}
 
 		const imageWidth = imageRequest.width ?? profile.model.width;
@@ -93,7 +93,7 @@ export async function GET(
 			return imageResponse(errorImage, 500);
 		}
 
-		return imageResponse(image);
+		return imageResponse(image, 200, req);
 	} catch (error) {
 		logger.error("Error generating image:", error);
 		const { searchParams } = new URL(req.url);

@@ -7,7 +7,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 
 - [x] Normalize nullable model image budgets and support updated UI scale variables.
 - [x] Fix machine authentication for browser previews and UUID webhooks.
-- [ ] Cache rendered images with tenant isolation and concurrent request deduplication.
+- [x] Cache rendered images with tenant isolation and concurrent request deduplication.
 - [ ] Reduce database readiness overhead and add log retention.
 - [ ] Retain last successful data/images and bound upstream work.
 - [ ] Queue, isolate, and restrict browser renders.

@@ -21,7 +21,6 @@ import {
 	calculateRefreshRate,
 	findOrCreateDevice,
 	getActivePlaylistItem,
-	precacheImageInBackground,
 	updateDeviceStatus,
 } from "./utils";
 
@@ -193,7 +192,6 @@ export async function GET(request: Request) {
 				break;
 		}
 
-		precacheImageInBackground(imageUrl, device.friendly_id);
 		updateDeviceStatus(device, headers, dynamicRefreshRate);
 
 		logInfo("Display request successful", {

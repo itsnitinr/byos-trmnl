@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import sharp from "sharp";
+import { BoundedCache, cacheKey } from "@/lib/cache/bounded-cache";
 import { type BmpGrayLevel, encodeGrayBmp } from "@/lib/render/bmp-encoder";
 import {
 	type PaletteReductionMode,
@@ -29,6 +31,7 @@ export type RenderDeviceImageResult = {
 	mime_type: string;
 	filename_ext: string;
 	size_limit_exceeded: boolean;
+	cacheStatus?: import("@/lib/cache/bounded-cache").CacheStatus;
 };
 
 const MIME_EXTENSION: Record<string, string> = {
@@ -160,7 +163,7 @@ async function encode(
 	};
 }
 
-export async function renderDeviceImage({
+async function encodeDeviceImage({
 	png,
 	profile,
 	reductionMode = "snap",
@@ -199,4 +202,25 @@ export async function renderDeviceImage({
 		filename_ext: getImageFilenameExtension(profile),
 		size_limit_exceeded: sizeLimitExceeded,
 	};
+}
+
+const encodedFrames = new BoundedCache<RenderDeviceImageResult>(
+	32 * 1024 * 1024,
+);
+
+export async function renderDeviceImage(
+	input: RenderDeviceImageInput,
+): Promise<RenderDeviceImageResult> {
+	const key = cacheKey({
+		profile: input.profile,
+		reduction: input.reductionMode,
+		png: createHash("sha256").update(input.png).digest("hex"),
+	});
+	const result = await encodedFrames.get(
+		key,
+		30_000,
+		() => encodeDeviceImage(input),
+		(image) => image.buffer.length,
+	);
+	return { ...result.value, cacheStatus: result.status };
 }

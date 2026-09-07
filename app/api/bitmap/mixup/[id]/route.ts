@@ -156,7 +156,7 @@ export async function GET(
 		);
 		const image = await renderDeviceImage({ png: compositedPng, profile });
 
-		return imageResponse(image);
+		return imageResponse(image, 200, req);
 	} catch (error) {
 		logger.error("Error generating mixup image:", error);
 		const image = await renderErrorImage({

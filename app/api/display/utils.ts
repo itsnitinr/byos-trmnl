@@ -40,28 +40,6 @@ export type DeviceLookupResult = {
 
 // --- Helper Functions ---
 
-export const precacheImageInBackground = (
-	imageUrl: string,
-	friendlyId: string,
-): void => {
-	fetch(imageUrl, { method: "GET" })
-		.then((response) => {
-			if (!response.ok) {
-				throw new Error(`Failed to cache image: ${response.status}`);
-			}
-			logInfo("Image pre-cached successfully", {
-				source: "api/display",
-				metadata: { imageUrl, friendlyId },
-			});
-		})
-		.catch((error: Error) => {
-			logError("Failed to precache image", {
-				source: "api/display",
-				metadata: { imageUrl, error: error.message, friendlyId },
-			});
-		});
-};
-
 export const isTimeInRange = (
 	timeToCheck: string,
 	startTime: string,

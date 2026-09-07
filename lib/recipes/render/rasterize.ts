@@ -45,6 +45,7 @@ export type RasterizeOptions = {
 
 export type RasterizeResults = {
 	png: Buffer | null;
+	cacheStatus?: import("@/lib/cache/bounded-cache").CacheStatus;
 	/** Echoed back so the device pass can honor settings like `paletteReduction`. */
 	renderSettings?: RecipeRenderSettings | null;
 };

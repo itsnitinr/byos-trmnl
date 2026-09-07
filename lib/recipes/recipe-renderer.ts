@@ -1,8 +1,10 @@
 import { createElement } from "react";
+import { getCurrentUserId } from "@/lib/auth/get-user";
 import {
 	type RenderDeviceImageResult,
 	renderDeviceImage,
 } from "@/lib/render/device-image";
+import { cachedRasterize } from "@/lib/render/frame-cache";
 import type { DeviceProfile } from "@/lib/trmnl/device-profile";
 import { createScreenProfile } from "@/lib/trmnl/screen-profile";
 import type { TrmnlModel, TrmnlPalette } from "@/lib/trmnl/types";
@@ -12,7 +14,7 @@ import {
 	isLiquidRecipe,
 	renderLiquidRecipe,
 } from "./liquid-renderer";
-import { type RasterizeResults, rasterize } from "./render/rasterize";
+import { type RasterizeResults } from "./render/rasterize";
 import { resolveReactRecipe } from "./runtime/react";
 
 /**
@@ -56,6 +58,7 @@ export async function renderRecipeToImage({
 	paletteId,
 	deviceProfile,
 }: RenderRecipeArgs): Promise<RasterizeResults> {
+	userId ??= await getCurrentUserId();
 	const profile =
 		deviceProfile ?? (model ? { model, palette: palette ?? null } : null);
 
@@ -76,20 +79,23 @@ export async function renderRecipeToImage({
 			params,
 			data,
 		});
-		return rasterize({
-			slug,
-			element,
-			imageWidth,
-			imageHeight,
-			layoutWidth: screen.logicalWidth,
-			layoutHeight: screen.logicalHeight,
-			cookies,
-			model,
-			profile,
-			paletteId,
-			userId,
-			renderSettings: definition.meta.renderSettings ?? null,
-		});
+		return cachedRasterize(
+			{
+				slug,
+				element,
+				imageWidth,
+				imageHeight,
+				layoutWidth: screen.logicalWidth,
+				layoutHeight: screen.logicalHeight,
+				cookies,
+				model,
+				profile,
+				paletteId,
+				userId,
+				renderSettings: definition.meta.renderSettings ?? null,
+			},
+			{ params, data, version: definition.meta.version },
+		);
 	}
 
 	// Liquid path
@@ -98,17 +104,21 @@ export async function renderRecipeToImage({
 		if (html === null) {
 			throw new Error(`Liquid recipe ${slug} did not produce HTML`);
 		}
-		return rasterize({
-			slug,
+		return cachedRasterize(
+			{
+				slug,
+				html,
+				imageWidth,
+				imageHeight,
+				cookies,
+				model,
+				profile,
+				paletteId,
+				renderSettings: null,
+				userId,
+			},
 			html,
-			imageWidth,
-			imageHeight,
-			cookies,
-			model,
-			profile,
-			paletteId,
-			renderSettings: null,
-		});
+		);
 	}
 
 	// Unknown slug
