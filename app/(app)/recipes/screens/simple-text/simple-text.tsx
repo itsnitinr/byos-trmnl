@@ -87,6 +87,7 @@ export const definition: RecipeDefinition<typeof paramsSchema> = {
 		createdAt: "2025-03-01T00:00:00Z",
 		updatedAt: "2025-03-01T00:00:00Z",
 		renderSettings: {
+			cacheSeconds: 86400,
 			supersample: true,
 		},
 	},

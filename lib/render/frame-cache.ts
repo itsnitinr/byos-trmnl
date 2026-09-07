@@ -14,8 +14,23 @@ export async function cachedRasterize(
 	options: RasterizeOptions,
 	content: unknown,
 ): Promise<RasterizeResults> {
-	const { element: _element, cookies: _cookies, ...identity } = options;
-	const key = cacheKey({ ...identity, content, renderer: getRendererType() });
+	const {
+		element: _element,
+		cookies: _cookies,
+		snapshot: _snapshot,
+		freshness,
+		...identity
+	} = options;
+	const key = cacheKey({
+		...identity,
+		content,
+		staleAt: freshness?.stale ? freshness.updatedAt : null,
+		renderer: getRendererType(),
+	});
+	const seconds = options.renderSettings?.cacheSeconds ?? 30;
+	const lifetime = Number.isFinite(seconds)
+		? Math.min(86_400, Math.max(0, seconds)) * 1000
+		: 30_000;
 	const fallbackKey = cacheKey({
 		slug: options.slug,
 		userId: options.userId,
@@ -31,14 +46,19 @@ export async function cachedRasterize(
 	try {
 		const result = await frames.get(
 			key,
-			30_000,
+			lifetime,
 			async () => {
 				const image = await measureRenderStage("raster", () =>
 					rasterize(options),
 				);
 				if (!image.png?.length)
 					throw new Error("Renderer produced an empty image");
-				return image;
+				return freshness?.stale
+					? {
+							...image,
+							png: await stampStaleImage(image.png, freshness.updatedAt),
+						}
+					: image;
 			},
 			(image) => image.png?.length ?? 0,
 		);
@@ -51,15 +71,6 @@ export async function cachedRasterize(
 				(image) => image.png?.length ?? 0,
 			);
 		}
-		if (options.freshness?.stale && result.value.png)
-			return {
-				...result.value,
-				png: await stampStaleImage(
-					result.value.png,
-					options.freshness.updatedAt,
-				),
-				cacheStatus: result.status,
-			};
 		return { ...result.value, cacheStatus: result.status };
 	} catch (error) {
 		const previous = lastGood.peek(fallbackKey);

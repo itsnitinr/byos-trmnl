@@ -95,7 +95,12 @@ export async function renderRecipeToImage({
 				freshness,
 				snapshot: { params, data, freshness },
 			},
-			{ params, data, version: definition.meta.version },
+			{
+				params,
+				data,
+				version: definition.meta.version,
+				edition: definition.getRenderCacheKey?.(params, data),
+			},
 		);
 	}
 

@@ -8,6 +8,8 @@ export type RecipeAuthor = {
 };
 
 export type RecipeRenderSettings = {
+	/** Frame lifetime in seconds (default 30, maximum one day). Only raise for deterministic content. */
+	cacheSeconds?: number;
 	supersample?: boolean;
 	applyEdgeSnap?: boolean;
 	/**
@@ -71,6 +73,8 @@ export type RecipeDefinition<
 	meta: RecipeMeta;
 	paramsSchema: P;
 	dataSchema: D;
+	/** Include time-dependent output in the frame identity, e.g. a daily edition date. */
+	getRenderCacheKey?: (params: z.infer<P>, data: z.infer<D>) => string;
 	getData?: (
 		params: z.infer<P>,
 		context?: { signal: AbortSignal },

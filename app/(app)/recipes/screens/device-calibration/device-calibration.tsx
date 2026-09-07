@@ -157,7 +157,7 @@ export const definition: RecipeDefinition<typeof paramsSchema> = {
 		category: "tools",
 		tags: ["calibration", "display"],
 		version: "1.0.0",
-		renderSettings: { supersample: false },
+		renderSettings: { supersample: false, cacheSeconds: 86400 },
 	},
 	paramsSchema,
 	dataSchema,
