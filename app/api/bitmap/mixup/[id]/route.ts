@@ -15,7 +15,7 @@ import {
 } from "@/lib/recipes/constants";
 import { logger } from "@/lib/recipes/logger";
 import { renderRecipeToImage } from "@/lib/recipes/recipe-renderer";
-import { renderDeviceImage } from "@/lib/render/device-image";
+import { ImageBudgetError, renderDeviceImage } from "@/lib/render/device-image";
 import { stripImageExtension } from "@/lib/render/device-image-url";
 import { renderErrorImage } from "@/lib/render/error-image";
 import { parseImageRequest } from "@/lib/render/image-request";
@@ -158,6 +158,8 @@ export async function GET(
 
 		return imageResponse(image, 200, req);
 	} catch (error) {
+		if (error instanceof ImageBudgetError)
+			return Response.json({ error: error.message }, { status: 422 });
 		logger.error("Error generating mixup image:", error);
 		const image = await renderErrorImage({
 			message:

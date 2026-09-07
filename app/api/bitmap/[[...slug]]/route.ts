@@ -14,6 +14,7 @@ import {
 } from "@/lib/recipes/constants";
 import { logger } from "@/lib/recipes/logger";
 import { renderRecipeForDevice } from "@/lib/recipes/recipe-renderer";
+import { ImageBudgetError } from "@/lib/render/device-image";
 import { stripImageExtension } from "@/lib/render/device-image-url";
 import { renderErrorImage } from "@/lib/render/error-image";
 import {
@@ -95,6 +96,8 @@ export async function GET(
 
 		return imageResponse(image, 200, req);
 	} catch (error) {
+		if (error instanceof ImageBudgetError)
+			return Response.json({ error: error.message }, { status: 422 });
 		logger.error("Error generating image:", error);
 		const { searchParams } = new URL(req.url);
 		const imageRequest = parseImageRequest(searchParams);

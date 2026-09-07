@@ -15,7 +15,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Resolve browser recipe data once.
 - [x] Make screenshot readiness deterministic and pin framework assets.
 - [x] Add device calibration and visual regression coverage.
-- [ ] Enforce device image byte budgets with a valid fallback.
+- [x] Enforce device image byte budgets with a valid fallback.
 - [ ] Support per-recipe data refresh intervals.
 - [ ] Add a render inspector.
 - [ ] Add playlist simulation for a selected date/time.

@@ -31,6 +31,7 @@ export type RenderDeviceImageResult = {
 	mime_type: string;
 	filename_ext: string;
 	size_limit_exceeded: boolean;
+	fallback?: boolean;
 	cacheStatus?: import("@/lib/cache/bounded-cache").CacheStatus;
 };
 
@@ -214,6 +215,33 @@ async function encodeDeviceImage({
 	};
 }
 
+export class ImageBudgetError extends Error {
+	constructor() {
+		super("Device image budget is too small for a valid image");
+		this.name = "ImageBudgetError";
+	}
+}
+
+async function encodeWithinBudget(
+	input: RenderDeviceImageInput,
+): Promise<RenderDeviceImageResult> {
+	const image = await encodeDeviceImage(input);
+	if (!image.size_limit_exceeded) return image;
+	const { width, height } = input.profile.model;
+	const size = Math.max(10, Math.min(24, Math.round(width / 30)));
+	const svg = Buffer.from(
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="white"/><text x="12" y="${Math.round(height / 2)}" font-family="sans-serif" font-size="${size}" fill="black">Image exceeds device limit</text><text x="12" y="${Math.round(height / 2) + size * 2}" font-family="sans-serif" font-size="${Math.round(size * 0.7)}" fill="black">Choose a simpler layout or fewer images.</text></svg>`,
+	);
+	const png = await sharp(svg).png().toBuffer();
+	const fallback = await encodeDeviceImage({
+		...input,
+		png,
+		reductionMode: "snap",
+	});
+	if (fallback.size_limit_exceeded) throw new ImageBudgetError();
+	return { ...fallback, fallback: true };
+}
+
 const encodedFrames = new BoundedCache<RenderDeviceImageResult>(
 	32 * 1024 * 1024,
 );
@@ -229,7 +257,7 @@ export async function renderDeviceImage(
 	const result = await encodedFrames.get(
 		key,
 		30_000,
-		() => encodeDeviceImage(input),
+		() => encodeWithinBudget(input),
 		(image) => image.buffer.length,
 	);
 	return { ...result.value, cacheStatus: result.status };
