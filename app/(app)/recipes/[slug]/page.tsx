@@ -17,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
-import { listAllRecipes } from "@/lib/recipes/catalog";
 import {
 	DEFAULT_IMAGE_HEIGHT,
 	DEFAULT_IMAGE_WIDTH,
@@ -28,6 +27,7 @@ import {
 	fetchLiquidRecipeSettings,
 	renderLiquidRecipe,
 } from "@/lib/recipes/liquid-renderer";
+import { listReactRecipes } from "@/lib/recipes/registry";
 import { getRendererType } from "@/lib/recipes/render/rasterize";
 import { invalidateRecipeData } from "@/lib/recipes/runtime/data-cache";
 import { resolveReactRecipe } from "@/lib/recipes/runtime/react";
@@ -48,7 +48,7 @@ async function refreshData(slug: string) {
 
 export async function generateStaticParams() {
 	try {
-		const recipes = await listAllRecipes();
+		const recipes = await listReactRecipes();
 		if (recipes.length > 0) {
 			return recipes.map((recipe) => ({ slug: recipe.slug }));
 		}

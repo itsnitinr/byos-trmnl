@@ -41,3 +41,5 @@ Refresh controls require migration `0022_add_recipe_data_refresh.sql`; no existi
 Playlist simulation shares the device selector, including sparse order values, midnight, weekday boundaries and DST. Overnight windows belong to the starting weekday. Simulation excludes device sleep and network delays.
 
 Daily art recipes work offline and accept an IANA timezone plus an optional fixed edition date. Moon phase uses an explicitly approximate mean-cycle model; botanical plates are decorative imagined specimens. Source notes are in the moon recipe.
+
+Production build validation caught a request-time boundary in the recipe catalog. Static route generation now reads only built-in metadata, and the catalog declares request-time loading. Missing-database checks bypass the clock-based readiness cache entirely.

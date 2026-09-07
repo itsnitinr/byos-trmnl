@@ -102,7 +102,8 @@ async function validateDatabase(): Promise<DbStatus> {
 
 const readiness = createReadinessCache(validateDatabase);
 export const invalidateDbReadiness = () => readiness.invalidate();
-export const checkDbConnection = () => readiness.get();
+export const checkDbConnection = () =>
+	process.env.DATABASE_URL ? readiness.get() : validateDatabase();
 
 export async function getDbStatus(): Promise<DbStatus> {
 	if (!process.env.DATABASE_URL) {
