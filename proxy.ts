@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/auth";
+import { isMachineAuthenticatedRoute } from "@/lib/auth/machine-routes";
 
 const PUBLIC_API_PATHS = [
 	"/api/auth",
@@ -26,6 +27,7 @@ const PUBLIC_PATHS = [
 	"/icon",
 	"/apple-icon",
 	"/trmnl-icons",
+	"/fonts",
 	"/sign-in",
 	"/sign-up",
 	"/recover",
@@ -37,8 +39,13 @@ export async function proxy(request: NextRequest) {
 
 	// Skip auth for public paths
 	if (
-		PUBLIC_PATHS.some((path) => pathname.startsWith(path)) ||
-		PUBLIC_API_PATHS.some((path) => pathname.startsWith(path))
+		isMachineAuthenticatedRoute(pathname) ||
+		PUBLIC_PATHS.some(
+			(path) => pathname === path || pathname.startsWith(`${path}/`),
+		) ||
+		PUBLIC_API_PATHS.some(
+			(path) => pathname === path || pathname.startsWith(`${path}/`),
+		)
 	) {
 		return NextResponse.next();
 	}

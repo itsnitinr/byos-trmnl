@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { getCurrentUserId } from "@/lib/auth/get-user";
 import {
 	DEFAULT_IMAGE_HEIGHT,
 	DEFAULT_IMAGE_WIDTH,
 } from "@/lib/recipes/constants";
-import { consumeBrowserRenderContext } from "@/lib/recipes/render/browser-context";
+import { readBrowserRenderContext } from "@/lib/recipes/render/browser-context";
 import {
 	wrapLogicalCanvasToTarget,
 	wrapWithTrmnlCss,
@@ -38,7 +39,12 @@ export default async function RecipePreviewPage({
 		palette_id: paletteParam,
 		render_token: renderToken,
 	} = await searchParams;
-	const userId = consumeBrowserRenderContext(renderToken);
+	const context = renderToken
+		? readBrowserRenderContext(renderToken, slug)
+		: null;
+	if (renderToken && !context) notFound();
+	const userId = context ? context.userId : await getCurrentUserId();
+	if (!context && !userId) notFound();
 
 	const resolved = await resolveReactRecipe(slug, userId ?? undefined);
 	if (!resolved) notFound();

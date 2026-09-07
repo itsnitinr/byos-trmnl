@@ -60,9 +60,7 @@ export async function renderWithBrowser(
 	});
 	if (options.model) params.set("model", options.model);
 	if (options.paletteId) params.set("palette_id", options.paletteId);
-	if (options.userId) {
-		params.set("render_token", createBrowserRenderContext(options.userId));
-	}
+	params.set("render_token", createBrowserRenderContext(options.userId, slug));
 	const url = `${baseUrl}/recipes/${slug}/preview?${params.toString()}`;
 	const captureWidth = options.captureWidth ?? width;
 	const captureHeight = options.captureHeight ?? height;
@@ -95,7 +93,18 @@ export async function renderWithBrowser(
 			height: captureHeight,
 			deviceScaleFactor: 1,
 		});
-		await page.goto(url, { waitUntil: "domcontentloaded" });
+		const response = await page.goto(url, {
+			waitUntil: "domcontentloaded",
+			timeout: 15_000,
+		});
+		if (
+			!response?.ok() ||
+			new URL(page.url()).pathname !== new URL(url).pathname
+		) {
+			throw new Error(
+				"Recipe preview returned an error or unexpected redirect",
+			);
+		}
 		await page
 			.waitForNetworkIdle({ idleTime: 500, timeout: 5000 })
 			.catch(() => {
