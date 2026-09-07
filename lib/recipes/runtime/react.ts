@@ -1,17 +1,16 @@
 import { cache } from "react";
 import { z } from "zod";
-import { getScreenParams } from "@/app/actions/screens-params";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import { getReactRecipeDefinition } from "@/lib/recipes/registry";
 import type { AnyRecipeDefinition } from "@/lib/recipes/types";
-import { zodObjectToParamDefinitions } from "@/lib/recipes/zod-form";
+import { loadRecipeConfig } from "./config";
 import {
 	type DataFreshness,
 	recipeDataKey,
 	resolveCachedData,
 } from "./data-cache";
 import { withRecipeDeadline } from "./fetch-context";
-import { loadRecipeRefreshSettings } from "./refresh-settings";
+import { defaultDataRefreshSeconds } from "./refresh-settings";
 
 /**
  * React-recipe runtime: given a slug + (optional) userId, resolve the
@@ -90,15 +89,18 @@ export const resolveReactRecipe = cache(
 		const definition = await getReactRecipeDefinition(slug);
 		if (!definition) return null;
 
-		// Read user-saved param overrides. Pass paramDefinitions so
-		// getScreenParams can return only fields declared by the recipe schema.
-		const paramDefinitions = zodObjectToParamDefinitions(
-			definition.paramsSchema,
+		const config =
+			definition.getData || Object.keys(definition.paramsSchema.shape).length
+				? await loadRecipeConfig(slug, userId)
+				: { params: {}, dataRefreshSeconds: null };
+		const storedOverrides = Object.fromEntries(
+			Object.entries(config.params).filter(
+				([, value]) =>
+					value !== undefined &&
+					value !== null &&
+					!(typeof value === "string" && !value.trim()),
+			),
 		);
-		const storedOverrides =
-			Object.keys(paramDefinitions).length > 0
-				? await getScreenParams(slug, paramDefinitions, userId)
-				: {};
 
 		const params = safeParseWithDefaults(
 			definition.paramsSchema,
@@ -110,7 +112,8 @@ export const resolveReactRecipe = cache(
 		let freshness: DataFreshness | undefined;
 		if (definition.getData) {
 			const getData = definition.getData;
-			const refresh = await loadRecipeRefreshSettings(slug, userId);
+			const refreshSeconds =
+				config.dataRefreshSeconds ?? defaultDataRefreshSeconds(slug);
 			const result = await resolveCachedData(
 				recipeDataKey(userId, slug, {
 					params,
@@ -129,7 +132,7 @@ export const resolveReactRecipe = cache(
 						throw new Error("Recipe data must be an object");
 					return validated as Record<string, unknown>;
 				},
-				refresh.seconds * 1000,
+				refreshSeconds * 1000,
 			);
 			data = result.data;
 			freshness = result.freshness;

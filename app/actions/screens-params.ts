@@ -1,16 +1,16 @@
 "use server";
 
-import { sql } from "kysely";
 import { revalidatePath } from "next/cache";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import type { JsonObject } from "@/lib/database/db.d";
-import { withExplicitUserScope, withUserScope } from "@/lib/database/scoped-db";
+import { withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import {
 	customFieldsToParamDefinitions,
 	fetchLiquidRecipeSettings,
 } from "@/lib/recipes/liquid-renderer";
 import { getReactRecipeDefinition } from "@/lib/recipes/registry";
+import { loadRecipeConfig } from "@/lib/recipes/runtime/config";
 import type { RecipeParamDefinitions } from "@/lib/recipes/zod-form";
 
 export type UpdateScreenParamsResult =
@@ -115,32 +115,11 @@ export async function getScreenParams(
 	definitions?: RecipeParamDefinitions,
 	userId?: string,
 ): Promise<Record<string, unknown>> {
-	const { ready } = await checkDbConnection();
-	if (!ready) {
-		return definitionDefaults(definitions);
-	}
-
-	const query = (
-		scopedDb: Parameters<Parameters<typeof withUserScope>[0]>[0],
-	) =>
-		scopedDb
-			.selectFrom("screen_configs")
-			.select(["params"])
-			.where("screen_id", "=", slug)
-			.orderBy(
-				sql`CASE WHEN user_id = current_setting('app.current_user_id', true) THEN 0 ELSE 1 END`,
-			)
-			.executeTakeFirst();
-
-	const row = userId
-		? await withExplicitUserScope(userId, query)
-		: await withUserScope(query);
-
-	const rawParams = row?.params ?? {};
-	const parsedParams =
-		typeof rawParams === "string"
-			? (JSON.parse(rawParams) as JsonObject)
-			: (rawParams as JsonObject);
+	const { params: parsedParams, editable } = await loadRecipeConfig(
+		slug,
+		userId,
+	);
+	if (!editable) return definitionDefaults(definitions);
 
 	if (!definitions) return (parsedParams as Record<string, unknown>) ?? {};
 

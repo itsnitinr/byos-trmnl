@@ -368,6 +368,16 @@ export async function fetchLiquidRecipeSettings(
 	return settingsContent ? parseSettings(settingsContent) : null;
 }
 
+export async function loadLiquidRecipeSource(slug: string, userId?: string) {
+	const files = await fetchRecipeFiles(slug, userId);
+	if (!files) return null;
+	const content = findTemplateFile(files, "settings.yml");
+	return {
+		files,
+		settings: content ? parseSettings(content) : ({} as SettingsYml),
+	};
+}
+
 /**
  * Register custom filters matching TRMNL/Laravel's Liquid extensions.
  */
@@ -448,16 +458,13 @@ export async function renderLiquidRecipe(
 	slug: string,
 	customFieldOverrides?: Record<string, unknown>,
 	userId?: string,
+	preparedSource?: NonNullable<
+		Awaited<ReturnType<typeof loadLiquidRecipeSource>>
+	>,
 ): Promise<LiquidRenderResult | null> {
-	const files = await fetchRecipeFiles(slug, userId);
-	if (!files) {
-		logger.warn(`No liquid recipe files found for slug: ${slug}`);
-		return null;
-	}
-
-	// Parse settings
-	const settingsContent = findTemplateFile(files, "settings.yml");
-	const settings = settingsContent ? parseSettings(settingsContent) : {};
+	const source = preparedSource ?? (await loadLiquidRecipeSource(slug, userId));
+	if (!source) return null;
+	const { files, settings } = source;
 
 	// Build custom fields values from defaults, then apply overrides
 	const customFieldValues = {

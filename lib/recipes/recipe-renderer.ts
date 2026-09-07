@@ -10,8 +10,7 @@ import { createScreenProfile } from "@/lib/trmnl/screen-profile";
 import type { TrmnlModel, TrmnlPalette } from "@/lib/trmnl/types";
 import {
 	customFieldsToParamDefinitions,
-	fetchLiquidRecipeSettings,
-	isLiquidRecipe,
+	loadLiquidRecipeSource,
 	renderLiquidRecipe,
 } from "./liquid-renderer";
 import { type RasterizeResults } from "./render/rasterize";
@@ -100,12 +99,9 @@ export async function renderRecipeToImage({
 		);
 	}
 
-	// Liquid path
-	if (await isLiquidRecipe(slug, userId ?? undefined)) {
-		const html = await buildLiquidHtml(slug, userId ?? undefined);
-		if (html === null) {
-			throw new Error(`Liquid recipe ${slug} did not produce HTML`);
-		}
+	// Liquid path: source lookup also establishes existence; reuse its files for settings and rendering.
+	const html = await buildLiquidHtml(slug, userId ?? undefined);
+	if (html !== null) {
 		return cachedRasterize(
 			{
 				slug,
@@ -177,12 +173,19 @@ async function buildLiquidHtml(
 	userId?: string,
 ): Promise<string | null> {
 	let customFieldOverrides: Record<string, unknown> | undefined;
-	const settings = await fetchLiquidRecipeSettings(slug, userId);
+	const source = await loadLiquidRecipeSource(slug, userId);
+	if (!source) return null;
+	const { settings } = source;
 	if (settings?.custom_fields?.length) {
 		const definitions = customFieldsToParamDefinitions(settings.custom_fields);
 		const { getScreenParams } = await import("@/app/actions/screens-params");
 		customFieldOverrides = await getScreenParams(slug, definitions, userId);
 	}
-	const result = await renderLiquidRecipe(slug, customFieldOverrides, userId);
+	const result = await renderLiquidRecipe(
+		slug,
+		customFieldOverrides,
+		userId,
+		source,
+	);
 	return result?.html ?? null;
 }

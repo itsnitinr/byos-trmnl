@@ -1,5 +1,4 @@
-import { withExplicitUserScope } from "@/lib/database/scoped-db";
-import { checkDbConnection } from "@/lib/database/utils";
+import { loadRecipeConfig } from "./config";
 
 const DEFAULTS: Record<string, number> = {
 	weather: 900,
@@ -25,17 +24,10 @@ export async function loadRecipeRefreshSettings(
 		seconds: defaultDataRefreshSeconds(slug),
 		editable: false,
 	};
-	if (!userId || !(await checkDbConnection()).ready) return fallback;
-	const row = await withExplicitUserScope(userId, (db) =>
-		db
-			.selectFrom("screen_configs")
-			.select("data_refresh_seconds")
-			.where("screen_id", "=", slug)
-			.where("user_id", "=", userId)
-			.executeTakeFirst(),
-	);
+	if (!userId) return fallback;
+	const config = await loadRecipeConfig(slug, userId);
 	return {
-		seconds: row?.data_refresh_seconds ?? fallback.seconds,
-		editable: true,
+		seconds: config.dataRefreshSeconds ?? fallback.seconds,
+		editable: config.editable,
 	};
 }
