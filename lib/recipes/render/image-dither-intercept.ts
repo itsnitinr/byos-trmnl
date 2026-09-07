@@ -1,7 +1,7 @@
 import type { Page } from "puppeteer-core";
 import React from "react";
+import { cachedPublicResource } from "@/lib/network/resource-cache";
 import { prepareImageForDevice } from "@/lib/render/device-image-prep";
-import { logger } from "../logger";
 import type { ImageDitherPolicy } from "./image-dither-policy";
 
 type ImageProps = {
@@ -66,7 +66,12 @@ async function prepareSrc({
 	height?: number;
 	cache: Map<string, Promise<string>>;
 }): Promise<string> {
-	if (policy.mode === "off" || isSkippableImageSrc(src)) return src;
+	if (isSkippableImageSrc(src)) return src;
+	if (policy.mode === "off") {
+		if (src.startsWith("data:")) return src;
+		const resource = await cachedPublicResource(src);
+		return `data:${resource.headers["content-type"]?.split(";")[0] || "application/octet-stream"};base64,${resource.body.toString("base64")}`;
+	}
 
 	const key = `${src}|${width ?? ""}|${height ?? ""}`;
 	const cached = cache.get(key);
@@ -78,12 +83,7 @@ async function prepareSrc({
 		width,
 		height,
 		dither: "floyd-steinberg",
-	})
-		.then((image) => image.dataUrl)
-		.catch((error) => {
-			logger.warn(`Failed to prepare image for device: ${src}`, error);
-			return src;
-		});
+	}).then((image) => image.dataUrl);
 	cache.set(key, prepared);
 	return prepared;
 }
@@ -180,7 +180,6 @@ export async function rewriteReactImagesForDevice(
 	node: React.ReactElement,
 	policy: ImageDitherPolicy,
 ): Promise<React.ReactElement> {
-	if (policy.mode === "off") return node;
 	const rewritten = await rewriteNode(node, policy, new Map());
 	return React.isValidElement(rewritten) ? rewritten : node;
 }

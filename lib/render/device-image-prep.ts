@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import sharp from "sharp";
-import { fetchPublicResource } from "@/lib/network/public-fetch";
+import { BoundedCache, cacheKey } from "@/lib/cache/bounded-cache";
+import { cachedPublicResource } from "@/lib/network/resource-cache";
 import {
 	quantizePngChannels,
 	reducePngToPalette,
@@ -41,7 +43,7 @@ async function loadImageSource(
 	const dataUrl = parseDataUrl(src);
 	if (dataUrl) return dataUrl;
 
-	return (await fetchPublicResource(src)).body;
+	return (await cachedPublicResource(src)).body;
 }
 
 function normalizeDimension(value: number | undefined): number | undefined {
@@ -84,27 +86,52 @@ export async function prepareImageForDevice({
 	dither = "floyd-steinberg",
 }: PrepareImageForDeviceInput): Promise<PreparedDeviceImage> {
 	const source = await loadImageSource(src);
-	const normalized = await normalizeImageToPng({
-		buffer: source,
+	const key = cacheKey({
+		source: createHash("sha256").update(source).digest("hex"),
+		palette: profile.palette,
 		width,
 		height,
+		dither,
 	});
-	const target = resolveDeviceRenderTarget(profile.palette);
+	return (
+		await preparedImages.get(
+			key,
+			Number.POSITIVE_INFINITY,
+			async () => {
+				const normalized = await normalizeImageToPng({
+					buffer: source,
+					width,
+					height,
+				});
+				const target = resolveDeviceRenderTarget(profile.palette);
 
-	let buffer = normalized;
-	if (!deviceRenderTargetNeedsReduction(target)) {
-		buffer = normalized;
-	} else if (target.targetPalette) {
-		buffer = await reducePngToPalette(normalized, target.targetPalette, dither);
-	} else if (
-		typeof target.channelBitDepth === "number" &&
-		target.channelBitDepth < 8
-	) {
-		buffer = await quantizePngChannels(normalized, target.channelBitDepth);
-	}
+				let buffer = normalized;
+				if (!deviceRenderTargetNeedsReduction(target)) {
+					buffer = normalized;
+				} else if (target.targetPalette) {
+					buffer = await reducePngToPalette(
+						normalized,
+						target.targetPalette,
+						dither,
+					);
+				} else if (
+					typeof target.channelBitDepth === "number" &&
+					target.channelBitDepth < 8
+				) {
+					buffer = await quantizePngChannels(
+						normalized,
+						target.channelBitDepth,
+					);
+				}
 
-	return {
-		buffer,
-		dataUrl: `data:image/png;base64,${buffer.toString("base64")}`,
-	};
+				return {
+					buffer,
+					dataUrl: `data:image/png;base64,${buffer.toString("base64")}`,
+				};
+			},
+			(image) => image.buffer.length + Buffer.byteLength(image.dataUrl),
+		)
+	).value;
 }
+
+const preparedImages = new BoundedCache<PreparedDeviceImage>(32 * 1024 * 1024);
