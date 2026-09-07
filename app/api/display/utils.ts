@@ -111,6 +111,7 @@ export const updateDeviceStatus = async (
 	device: Device,
 	headers: RequestHeaders,
 	refreshDurationSeconds: number,
+	nextPlaylistIndex?: number,
 ): Promise<void> => {
 	const now = new Date();
 	const nextExpectedUpdate = new Date(
@@ -123,6 +124,9 @@ export const updateDeviceStatus = async (
 		last_refresh_duration: Math.round(refreshDurationSeconds),
 		updated_at: now.toISOString(),
 	};
+	if (nextPlaylistIndex !== undefined) {
+		updateData.current_playlist_index = nextPlaylistIndex;
+	}
 
 	if (headers.batteryVoltage) {
 		updateData.battery_voltage = Number.parseFloat(headers.batteryVoltage);
@@ -151,11 +155,14 @@ export const updateDeviceStatus = async (
 		} else {
 			await update(db);
 		}
-	} catch (_error) {
+	} catch (error) {
 		logError("Error updating device status", {
 			source: "api/display",
-			metadata: { deviceId: device.id, headers },
+			metadata: { deviceId: device.id },
 		});
+		// A playlist must not advance without persisting its position. Status-only
+		// telemetry remains best effort, as before.
+		if (nextPlaylistIndex !== undefined) throw error;
 	}
 };
 

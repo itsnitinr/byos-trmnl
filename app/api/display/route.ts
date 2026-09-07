@@ -1,6 +1,4 @@
 import { afterResponse } from "@/lib/cache/after-response";
-import { db } from "@/lib/database/db";
-import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import {
 	DISPLAY_FALLBACK_REFRESH_SECONDS,
@@ -97,6 +95,7 @@ export async function GET(request: Request) {
 
 		let { screen: screenToDisplay, imageUrl } = selection;
 		let dynamicRefreshRate: number;
+		let nextPlaylistIndex: number | undefined;
 
 		switch (device.display_mode) {
 			case DeviceDisplayMode.PLAYLIST: {
@@ -111,17 +110,7 @@ export async function GET(request: Request) {
 					if (activeItem) {
 						screenToDisplay = activeItem.screen_id;
 						dynamicRefreshRate = activeItem.duration;
-						const updatePlaylistIndex = (scopedDb: typeof db) =>
-							scopedDb
-								.updateTable("devices")
-								.set({ current_playlist_index: activeItem.order_index })
-								.where("id", "=", device.id.toString())
-								.execute();
-						if (device.user_id) {
-							await withExplicitUserScope(device.user_id, updatePlaylistIndex);
-						} else {
-							await updatePlaylistIndex(db);
-						}
+						nextPlaylistIndex = activeItem.order_index;
 					} else {
 						logInfo("No active playlist item found", {
 							source: "api/display",
@@ -197,7 +186,12 @@ export async function GET(request: Request) {
 				break;
 		}
 
-		await updateDeviceStatus(device, headers, dynamicRefreshRate);
+		await updateDeviceStatus(
+			device,
+			headers,
+			dynamicRefreshRate,
+			nextPlaylistIndex,
+		);
 
 		logInfo("Display request successful", {
 			source: "api/display",
