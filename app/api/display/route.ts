@@ -98,7 +98,7 @@ export async function GET(request: Request) {
 				if (device.playlist_id) {
 					const activeItem = await getActivePlaylistItem(
 						device.playlist_id,
-						device.current_playlist_index || 0,
+						device.current_playlist_index ?? -1,
 						device.timezone || "UTC",
 						device.user_id,
 					);

@@ -15,7 +15,15 @@ import {
 	resolveUserIdFromApiKey,
 } from "@/lib/device/request-headers";
 import { logError, logInfo, logWarn } from "@/lib/logger";
+import {
+	isTimeInRange,
+	localScheduleTime,
+	selectPlaylistItem,
+} from "@/lib/playlists/schedule";
 import { logger } from "@/lib/recipes/logger";
+
+export { isTimeInRange } from "@/lib/playlists/schedule";
+
 import {
 	type ModelStorageResolution,
 	resolveModelForStorage,
@@ -40,17 +48,6 @@ export type DeviceLookupResult = {
 
 // --- Helper Functions ---
 
-export const isTimeInRange = (
-	timeToCheck: string,
-	startTime: string,
-	endTime: string,
-): boolean => {
-	if (startTime > endTime) {
-		return timeToCheck >= startTime || timeToCheck < endTime;
-	}
-	return timeToCheck >= startTime && timeToCheck < endTime;
-};
-
 export const calculateRefreshRate = (
 	refreshSchedule: RefreshSchedule | null,
 	defaultRefreshRate: number,
@@ -60,19 +57,7 @@ export const calculateRefreshRate = (
 		return defaultRefreshRate;
 	}
 
-	const now = new Date();
-	const options = {
-		timeZone: timezone,
-		hour12: false,
-	} as Intl.DateTimeFormatOptions;
-	const formatter = new Intl.DateTimeFormat("en-US", {
-		...options,
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-
-	const [{ value: hour }, , { value: minute }] = formatter.formatToParts(now);
-	const currentTimeString = `${hour}:${minute}`;
+	const { time: currentTimeString } = localScheduleTime(new Date(), timezone);
 
 	for (const range of refreshSchedule.time_ranges as TimeRange[]) {
 		if (isTimeInRange(currentTimeString, range.start_time, range.end_time)) {
@@ -112,62 +97,12 @@ export const getActivePlaylistItem = async (
 		return null;
 	}
 
-	const now = new Date();
-	const options = {
-		timeZone: timezone,
-		hour12: false,
-	} as Intl.DateTimeFormatOptions;
-
-	const timeFormatter = new Intl.DateTimeFormat("en-US", {
-		...options,
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-	const [{ value: hour }, , { value: minute }] =
-		timeFormatter.formatToParts(now);
-	const currentTime = `${hour}:${minute}`;
-
-	const dayFormatter = new Intl.DateTimeFormat("en-US", {
-		...options,
-		weekday: "long",
-	});
-	const currentDay = dayFormatter.format(now).toLowerCase();
-
-	const metadata = {
-		playlistId,
+	return selectPlaylistItem(
+		items as unknown as PlaylistItem[],
 		currentIndex,
+		new Date(),
 		timezone,
-		currentTime,
-		currentDay,
-		totalItems: items.length,
-	};
-	logInfo("Checking playlist items for time/day match", {
-		source: "api/display",
-		metadata,
-	});
-
-	for (let i = 1; i < items.length + 1; i++) {
-		const itemIndex = (currentIndex + i) % items.length;
-		const item = items[itemIndex];
-
-		const days_of_week = item.days_of_week as string[] | null;
-		const start_time = item.start_time;
-		const end_time = item.end_time;
-
-		const isTimeValid =
-			!start_time ||
-			!end_time ||
-			isTimeInRange(currentTime, start_time, end_time);
-		const isDayValid =
-			!days_of_week ||
-			(Array.isArray(days_of_week) && days_of_week.includes(currentDay));
-
-		if (isTimeValid && isDayValid) {
-			return item as unknown as PlaylistItem;
-		}
-	}
-
-	return null;
+	);
 };
 
 // --- Device Management ---

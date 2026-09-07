@@ -40,5 +40,19 @@
 		"category": "device-tools",
 		"createdAt": "2026-09-08T00:00:00Z",
 		"updatedAt": "2026-09-08T00:00:00Z"
+	},
+	"playlist-simulator": {
+		"title": "Playlist simulator",
+		"published": true,
+		"description": "Preview scheduled screen selection at any date and time, including overnight windows.",
+		"tags": ["playlist", "schedule", "preview"],
+		"author": {
+			"name": "BYOS",
+			"github": "itsnitinr"
+		},
+		"version": "1.0.0",
+		"category": "device-tools",
+		"createdAt": "2026-09-08T00:00:00Z",
+		"updatedAt": "2026-09-08T00:00:00Z"
 	}
 }

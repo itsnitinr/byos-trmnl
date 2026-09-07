@@ -18,7 +18,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Enforce device image byte budgets with a valid fallback.
 - [x] Support per-recipe data refresh intervals.
 - [x] Add a render inspector.
-- [ ] Add playlist simulation for a selected date/time.
+- [x] Add playlist simulation for a selected date/time.
 - [ ] Add daily moon, botanical, and generative print recipes.
 
 ## Validation
@@ -37,3 +37,5 @@ Readiness checkpoint: headless Chrome waited for delayed recipe content and imag
 Visual test server uses the pinned Node 22.22.3 runtime; Node 26 development route discovery failed locally. Calibration also exposed and fixed skipped dithering of data-URL images.
 
 Refresh controls require migration `0022_add_recipe_data_refresh.sql`; no existing database was migrated during this work.
+
+Playlist simulation shares the device selector, including sparse order values, midnight, weekday boundaries and DST. Overnight windows belong to the starting weekday. Simulation excludes device sleep and network delays.
