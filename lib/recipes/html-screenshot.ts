@@ -1,4 +1,7 @@
-import { getBrowser } from "@/lib/recipes/chrome-pool";
+import {
+	restrictHtmlNetwork,
+	withBrowserPage,
+} from "@/lib/recipes/render/browser-page";
 import { rewritePageImagesForDevice } from "@/lib/recipes/render/image-dither-intercept";
 import {
 	IMAGE_DITHER_OFF,
@@ -25,14 +28,15 @@ export async function renderHtmlToImage(
 	model?: TrmnlModel | null,
 	imageDitherPolicy?: ImageDitherPolicy,
 ): Promise<Buffer> {
-	const browser = await getBrowser("sandboxed");
-	const page = await browser.newPage();
-	try {
+	return withBrowserPage("sandboxed", async (page) => {
 		await page.setViewport({ width, height });
-		await page.setContent(injectTrmnlCssIntoHtml(html, model ?? null), {
-			waitUntil: "load",
-			timeout: 15000,
-		});
+		await page.setContent(
+			restrictHtmlNetwork(injectTrmnlCssIntoHtml(html, model ?? null)),
+			{
+				waitUntil: "load",
+				timeout: 15000,
+			},
+		);
 		await page.waitForNetworkIdle({ timeout: 15000 });
 		const ditherPolicy = imageDitherPolicy ?? IMAGE_DITHER_OFF;
 		await rewritePageImagesForDevice(page, ditherPolicy);
@@ -44,7 +48,5 @@ export async function renderHtmlToImage(
 			clip: { x: 0, y: 0, width, height },
 		});
 		return Buffer.from(screenshot);
-	} finally {
-		await page.close();
-	}
+	});
 }

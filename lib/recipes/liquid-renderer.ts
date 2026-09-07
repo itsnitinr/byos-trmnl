@@ -10,7 +10,7 @@ import { cacheKey } from "@/lib/cache/bounded-cache";
 import { db } from "@/lib/database/db";
 import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
-import { readResponseBytes } from "@/lib/network/response-bytes";
+import { fetchPublicResource } from "@/lib/network/public-fetch";
 import { logger } from "./logger";
 import { type DataFreshness, resolveCachedData } from "./runtime/data-cache";
 import type { RecipeParamDefinitions } from "./zod-form";
@@ -246,18 +246,12 @@ async function fetchPollingData(
 			const controller = new AbortController();
 			const timeout = setTimeout(() => controller.abort(), 10000);
 			try {
-				const response = await fetch(url, {
+				const response = await fetchPublicResource(url, {
 					signal: controller.signal,
-					headers: { "User-Agent": "BYOS/1.0" },
-					redirect: "error",
+					maxBytes: 2 * 1024 * 1024,
+					redirects: 0,
 				});
-				if (!response.ok) {
-					logger.warn(`Polling URL ${url} returned ${response.status}`);
-					return { index, result: null };
-				}
-				const json = JSON.parse(
-					(await readResponseBytes(response, 2 * 1024 * 1024)).toString(),
-				);
+				const json = JSON.parse(response.body.toString());
 				return { index, result: json };
 			} catch (error) {
 				logger.error(`Error fetching polling URL ${url}:`, error);

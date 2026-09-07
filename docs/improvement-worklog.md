@@ -10,7 +10,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Cache rendered images with tenant isolation and concurrent request deduplication.
 - [x] Reduce database readiness overhead and add log retention.
 - [x] Retain last successful data/images and bound upstream work.
-- [ ] Queue, isolate, and restrict browser renders.
+- [x] Queue, isolate, and restrict browser renders.
 - [ ] Optimize palette conversion and intermediate image encoding.
 - [ ] Resolve browser recipe data once.
 - [ ] Make screenshot readiness deterministic and pin framework assets.

@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { readResponseBytes } from "@/lib/network/response-bytes";
+import { fetchPublicResource } from "@/lib/network/public-fetch";
 import {
 	quantizePngChannels,
 	reducePngToPalette,
@@ -41,11 +41,7 @@ async function loadImageSource(
 	const dataUrl = parseDataUrl(src);
 	if (dataUrl) return dataUrl;
 
-	const response = await fetch(src, { signal: AbortSignal.timeout(10_000) });
-	if (!response.ok) {
-		throw new Error(`Failed to fetch image ${src}: ${response.status}`);
-	}
-	return readResponseBytes(response, 15 * 1024 * 1024);
+	return (await fetchPublicResource(src)).body;
 }
 
 function normalizeDimension(value: number | undefined): number | undefined {
