@@ -26,5 +26,19 @@
 		},
 		"version": "0.1.0",
 		"category": "font-tools"
+	},
+	"render-inspector": {
+		"title": "Render inspector",
+		"published": true,
+		"description": "Measure rendering stages, cache reuse and image size for your devices.",
+		"tags": ["rendering", "performance", "diagnostics"],
+		"author": {
+			"name": "BYOS",
+			"github": "itsnitinr"
+		},
+		"version": "1.0.0",
+		"category": "device-tools",
+		"createdAt": "2026-09-08T00:00:00Z",
+		"updatedAt": "2026-09-08T00:00:00Z"
 	}
 }

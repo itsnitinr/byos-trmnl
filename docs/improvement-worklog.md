@@ -17,7 +17,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Add device calibration and visual regression coverage.
 - [x] Enforce device image byte budgets with a valid fallback.
 - [x] Support per-recipe data refresh intervals.
-- [ ] Add a render inspector.
+- [x] Add a render inspector.
 - [ ] Add playlist simulation for a selected date/time.
 - [ ] Add daily moon, botanical, and generative print recipes.
 

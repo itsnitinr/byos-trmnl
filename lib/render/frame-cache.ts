@@ -4,6 +4,7 @@ import type {
 	RasterizeResults,
 } from "@/lib/recipes/render/rasterize";
 import { getRendererType, rasterize } from "@/lib/recipes/render/rasterize";
+import { measureRenderStage, recordCacheStatus } from "./diagnostics";
 import { stampStaleImage } from "./stale-image";
 
 const lastGood = new BoundedCache<RasterizeResults>(32 * 1024 * 1024);
@@ -32,13 +33,16 @@ export async function cachedRasterize(
 			key,
 			30_000,
 			async () => {
-				const image = await rasterize(options);
+				const image = await measureRenderStage("raster", () =>
+					rasterize(options),
+				);
 				if (!image.png?.length)
 					throw new Error("Renderer produced an empty image");
 				return image;
 			},
 			(image) => image.png?.length ?? 0,
 		);
+		recordCacheStatus("raster", result.status);
 		if (result.value.png && !options.freshness?.stale) {
 			await lastGood.get(
 				fallbackKey,

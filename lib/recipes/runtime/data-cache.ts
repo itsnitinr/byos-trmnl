@@ -1,4 +1,5 @@
 import { BoundedCache, cacheKey } from "@/lib/cache/bounded-cache";
+import { measureRenderStage } from "@/lib/render/diagnostics";
 
 export type DataFreshness = { updatedAt: number; stale: boolean };
 const dataCache = new BoundedCache<Record<string, unknown>>(
@@ -12,8 +13,11 @@ export async function resolveCachedData(
 	ttlMs = 30_000,
 ): Promise<{ data: Record<string, unknown>; freshness: DataFreshness }> {
 	try {
-		const result = await dataCache.get(key, ttlMs, fetchData, (value) =>
-			Buffer.byteLength(JSON.stringify(value)),
+		const result = await dataCache.get(
+			key,
+			ttlMs,
+			() => measureRenderStage("fetch", fetchData),
+			(value) => Buffer.byteLength(JSON.stringify(value)),
 		);
 		return {
 			data: result.value,

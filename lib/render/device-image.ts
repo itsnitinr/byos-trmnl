@@ -12,6 +12,7 @@ import {
 	resolveDeviceRenderTarget,
 	VALID_GRAY_LEVELS,
 } from "@/lib/trmnl/palette-colors";
+import { measureRenderStage, recordCacheStatus } from "./diagnostics";
 
 export type RenderDeviceImageInput = {
 	png: Buffer;
@@ -257,8 +258,9 @@ export async function renderDeviceImage(
 	const result = await encodedFrames.get(
 		key,
 		30_000,
-		() => encodeWithinBudget(input),
+		() => measureRenderStage("encode", () => encodeWithinBudget(input)),
 		(image) => image.buffer.length,
 	);
+	recordCacheStatus("encode", result.status);
 	return { ...result.value, cacheStatus: result.status };
 }
