@@ -51,7 +51,7 @@ function labDistanceSquared(a: Lab, b: Lab): number {
 	return (a.l - b.l) ** 2 + (a.a - b.a) ** 2 + (a.b - b.b) ** 2;
 }
 
-function createLabPalette(palette: RGB[]): LabPaletteColor[] {
+export function createLabPalette(palette: RGB[]): LabPaletteColor[] {
 	if (!palette.length) {
 		throw new Error("Cannot reduce image to an empty palette");
 	}
@@ -77,47 +77,50 @@ export function nearestPaletteColor(
 	return best;
 }
 
+function createPaletteMapper(paletteColors: RGB[]) {
+	const palette = createLabPalette(paletteColors);
+	const gray = new Int32Array(256).fill(-1);
+	const memo = new Map<number, number>();
+	return (r: number, g: number, b: number): number => {
+		const key = (r << 16) | (g << 8) | b;
+		const isGray = r === g && g === b;
+		const cached = isGray ? gray[r] : memo.get(key);
+		if (cached !== undefined && cached !== -1) return cached;
+		const color = nearestPaletteColor({ r, g, b }, palette);
+		const packed = (color.r << 16) | (color.g << 8) | color.b;
+		if (isGray) gray[r] = packed;
+		else if (memo.size < 65_536) memo.set(key, packed);
+		return packed;
+	};
+}
+
 export function snapRgbToPalette(
 	data: Uint8Array | Buffer,
 	paletteColors: RGB[],
 ): Uint8Array {
-	const palette = createLabPalette(paletteColors);
+	const nearest = createPaletteMapper(paletteColors);
 	const output = new Uint8Array(data.length);
-
 	for (let index = 0; index < data.length; index += 3) {
-		const nextColor = nearestPaletteColor(
-			{
-				r: clampByte(data[index] ?? 0),
-				g: clampByte(data[index + 1] ?? 0),
-				b: clampByte(data[index + 2] ?? 0),
-			},
-			palette,
-		);
-		output[index] = nextColor.r;
-		output[index + 1] = nextColor.g;
-		output[index + 2] = nextColor.b;
+		const color = nearest(data[index], data[index + 1], data[index + 2]);
+		output[index] = (color >>> 16) & 255;
+		output[index + 1] = (color >>> 8) & 255;
+		output[index + 2] = color & 255;
 	}
-
 	return output;
 }
 
-function floydSteinbergRgbToPalette(
+export function reduceRgbToPalette(
 	data: Uint8Array | Buffer,
 	width: number,
 	height: number,
 	paletteColors: RGB[],
+	mode: PaletteReductionMode,
 ): Uint8Array {
-	const palette = createLabPalette(paletteColors);
+	if (mode === "snap") return snapRgbToPalette(data, paletteColors);
+	const nearest = createPaletteMapper(paletteColors);
 	return floydSteinbergQuantize(data, width, height, 3, ([r, g, b]) => {
-		const nextColor = nearestPaletteColor(
-			{
-				r: clampByte(r ?? 0),
-				g: clampByte(g ?? 0),
-				b: clampByte(b ?? 0),
-			},
-			palette,
-		);
-		return [nextColor.r, nextColor.g, nextColor.b];
+		const color = nearest(clampByte(r), clampByte(g), clampByte(b));
+		return [(color >>> 16) & 255, (color >>> 8) & 255, color & 255];
 	});
 }
 
@@ -128,13 +131,17 @@ export async function reducePngToPalette(
 ): Promise<Buffer> {
 	const source = await sharp(png)
 		.removeAlpha()
+		.toColourspace("srgb")
 		.raw()
 		.toBuffer({ resolveWithObject: true });
 	const { width, height } = source.info;
-	const output =
-		mode === "floyd-steinberg"
-			? floydSteinbergRgbToPalette(source.data, width, height, paletteColors)
-			: snapRgbToPalette(source.data, paletteColors);
+	const output = reduceRgbToPalette(
+		source.data,
+		width,
+		height,
+		paletteColors,
+		mode,
+	);
 
 	return sharp(output, { raw: { width, height, channels: 3 } })
 		.png()
@@ -151,6 +158,7 @@ export async function quantizePngChannels(
 
 	const source = await sharp(png)
 		.removeAlpha()
+		.toColourspace("srgb")
 		.raw()
 		.toBuffer({ resolveWithObject: true });
 	const { width, height, channels } = source.info;

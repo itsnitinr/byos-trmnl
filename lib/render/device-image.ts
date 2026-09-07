@@ -4,9 +4,9 @@ import { BoundedCache, cacheKey } from "@/lib/cache/bounded-cache";
 import { type BmpGrayLevel, encodeGrayBmp } from "@/lib/render/bmp-encoder";
 import {
 	type PaletteReductionMode,
-	quantizePngChannels,
-	reducePngToPalette,
+	reduceRgbToPalette,
 } from "@/lib/render/palette-reduction";
+import { quantizeValue } from "@/lib/render/quantize";
 import type { DeviceProfile } from "@/lib/trmnl/device-profile";
 import {
 	resolveDeviceRenderTarget,
@@ -59,31 +59,39 @@ function bmpPaletteDepthFromTargetColorCount(
 	return 2;
 }
 
-async function transformToDeviceCanvas(
+type DevicePixels = { data: Buffer; width: number; height: number };
+
+async function transformToDevicePixels(
 	png: Buffer,
 	profile: DeviceProfile,
-): Promise<Buffer> {
+): Promise<DevicePixels> {
 	const image = sharp(png)
 		.flatten({ background: "#ffffff" })
 		.resize(profile.model.width, profile.model.height, { fit: "cover" });
-
-	const rotated =
-		profile.model.rotation === 0 ? image : image.rotate(profile.model.rotation);
-
-	return rotated.png().toBuffer();
+	if (profile.model.rotation !== 0) image.rotate(profile.model.rotation);
+	const { data, info } = await image
+		.removeAlpha()
+		.toColourspace("srgb")
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+	return { data, width: info.width, height: info.height };
 }
 
 async function encode(
-	png: Buffer,
+	pixels: DevicePixels,
 	mimeType: string,
 	imageSizeLimit?: number,
 	options: { paletteColorCount?: number } = {},
 ): Promise<{ buffer: Buffer; sizeLimitExceeded: boolean }> {
+	const image = () =>
+		sharp(pixels.data, {
+			raw: { width: pixels.width, height: pixels.height, channels: 3 },
+		});
 	if (mimeType === "image/bmp") {
 		const levels = bmpPaletteDepthFromTargetColorCount(
 			options.paletteColorCount,
 		);
-		const source = await sharp(png)
+		const source = await image()
 			.removeAlpha()
 			.grayscale()
 			.raw()
@@ -106,7 +114,7 @@ async function encode(
 
 	if (mimeType === "image/webp") {
 		for (const quality of [90, 80, 70, 60, 50]) {
-			const buffer = await sharp(png).webp({ quality }).toBuffer();
+			const buffer = await image().webp({ quality }).toBuffer();
 			if (
 				!imageSizeLimit ||
 				buffer.length <= imageSizeLimit ||
@@ -124,11 +132,11 @@ async function encode(
 
 	if (mimeType === "image/png") {
 		const candidates: Buffer[] = [
-			await sharp(png).png({ compressionLevel: 9, effort: 10 }).toBuffer(),
+			await image().png({ compressionLevel: 9, effort: 10 }).toBuffer(),
 		];
 		if (options.paletteColorCount && options.paletteColorCount <= 256) {
 			candidates.push(
-				await sharp(png)
+				await image()
 					.png({
 						palette: true,
 						colours: options.paletteColorCount,
@@ -152,7 +160,7 @@ async function encode(
 		};
 	}
 
-	const buffer = await sharp(png)
+	const buffer = await image()
 		.png({ compressionLevel: 9, effort: 10 })
 		.toBuffer();
 	return {
@@ -168,29 +176,31 @@ async function encodeDeviceImage({
 	profile,
 	reductionMode = "snap",
 }: RenderDeviceImageInput): Promise<RenderDeviceImageResult> {
-	const transformed = await transformToDeviceCanvas(png, profile);
+	const pixels = await transformToDevicePixels(png, profile);
 	const target = resolveDeviceRenderTarget(profile.palette);
-
-	let quantized: Buffer;
 	let paletteColorCount: number | undefined;
 	if (target.targetPalette && profile.model.bit_depth < 24) {
 		paletteColorCount = target.targetPalette.length;
-		quantized = await reducePngToPalette(
-			transformed,
-			target.targetPalette,
-			reductionMode,
+		pixels.data = Buffer.from(
+			reduceRgbToPalette(
+				pixels.data,
+				pixels.width,
+				pixels.height,
+				target.targetPalette,
+				reductionMode,
+			),
 		);
 	} else if (
 		typeof target.channelBitDepth === "number" &&
 		target.channelBitDepth < 8
 	) {
-		quantized = await quantizePngChannels(transformed, target.channelBitDepth);
-	} else {
-		quantized = transformed;
+		const levels = 1 << target.channelBitDepth;
+		for (let i = 0; i < pixels.data.length; i++)
+			pixels.data[i] = quantizeValue(pixels.data[i], levels);
 	}
 
 	const { buffer, sizeLimitExceeded } = await encode(
-		quantized,
+		pixels,
 		profile.model.mime_type,
 		profile.model.image_size_limit,
 		{ paletteColorCount },
