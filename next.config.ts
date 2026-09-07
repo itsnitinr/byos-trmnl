@@ -25,6 +25,20 @@ if (existsSync("node_modules/puppeteer")) {
 
 const nextConfig: NextConfig = {
 	distDir: process.env.NEXT_DIST_DIR || ".next",
+	async headers() {
+		return [
+			{
+				source: "/vendor/trmnl/3.3.1/fonts/:path*",
+				headers: [
+					{ key: "Access-Control-Allow-Origin", value: "*" },
+					{
+						key: "Cache-Control",
+						value: "public, max-age=31536000, immutable",
+					},
+				],
+			},
+		];
+	},
 	trailingSlash: false,
 	skipTrailingSlashRedirect: true,
 	cacheComponents: true,

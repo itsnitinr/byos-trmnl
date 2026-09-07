@@ -43,3 +43,5 @@ Playlist simulation shares the device selector, including sparse order values, m
 Daily art recipes work offline and accept an IANA timezone plus an optional fixed edition date. Moon phase uses an explicitly approximate mean-cycle model; botanical plates are decorative imagined specimens. Source notes are in the moon recipe.
 
 Production build validation caught a request-time boundary in the recipe catalog. Static route generation now reads only built-in metadata, and the catalog declares request-time loading. Missing-database checks bypass the clock-based readiness cache entirely.
+
+Browser smoke tests found that Liquid pages created with setContent have an opaque origin. Bundled public font assets now send CORS headers so Chromium can load them with web security enabled.
