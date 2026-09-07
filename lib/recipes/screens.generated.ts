@@ -10,7 +10,11 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 		import("../../app/(app)/recipes/screens/bitcoin-price/bitcoin-price"),
 	"bitmap-patterns": () =>
 		import("../../app/(app)/recipes/screens/bitmap-patterns/bitmap-patterns"),
+	"botanical-plate": () =>
+		import("../../app/(app)/recipes/screens/botanical-plate/botanical-plate"),
 	calendar: () => import("../../app/(app)/recipes/screens/calendar/calendar"),
+	"daily-print": () =>
+		import("../../app/(app)/recipes/screens/daily-print/daily-print"),
 	"device-calibration": () =>
 		import(
 			"../../app/(app)/recipes/screens/device-calibration/device-calibration"
@@ -25,6 +29,8 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 		import("../../app/(app)/recipes/screens/local-news/local-news"),
 	"month-calendar": () =>
 		import("../../app/(app)/recipes/screens/month-calendar/month-calendar"),
+	"moon-almanac": () =>
+		import("../../app/(app)/recipes/screens/moon-almanac/moon-almanac"),
 	"not-found": () =>
 		import("../../app/(app)/recipes/screens/not-found/not-found"),
 	"responsive-example": () =>
@@ -49,12 +55,15 @@ export const reactRecipeSlugs = [
 	"album",
 	"bitcoin-price",
 	"bitmap-patterns",
+	"botanical-plate",
 	"calendar",
+	"daily-print",
 	"device-calibration",
 	"github-contributions",
 	"hacker-news",
 	"local-news",
 	"month-calendar",
+	"moon-almanac",
 	"not-found",
 	"responsive-example",
 	"simple-text",

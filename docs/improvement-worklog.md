@@ -19,7 +19,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Support per-recipe data refresh intervals.
 - [x] Add a render inspector.
 - [x] Add playlist simulation for a selected date/time.
-- [ ] Add daily moon, botanical, and generative print recipes.
+- [x] Add daily moon, botanical, and generative print recipes.
 
 ## Validation
 
@@ -39,3 +39,5 @@ Visual test server uses the pinned Node 22.22.3 runtime; Node 26 development rou
 Refresh controls require migration `0022_add_recipe_data_refresh.sql`; no existing database was migrated during this work.
 
 Playlist simulation shares the device selector, including sparse order values, midnight, weekday boundaries and DST. Overnight windows belong to the starting weekday. Simulation excludes device sleep and network delays.
+
+Daily art recipes work offline and accept an IANA timezone plus an optional fixed edition date. Moon phase uses an explicitly approximate mean-cycle model; botanical plates are decorative imagined specimens. Source notes are in the moon recipe.
