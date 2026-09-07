@@ -32,6 +32,8 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 	"sunrise-sunset": () =>
 		import("../../app/(app)/recipes/screens/sunrise-sunset/sunrise-sunset"),
 	weather: () => import("../../app/(app)/recipes/screens/weather/weather"),
+	"whos-overhead": () =>
+		import("../../app/(app)/recipes/screens/whos-overhead/whos-overhead"),
 	wikipedia: () =>
 		import("../../app/(app)/recipes/screens/wikipedia/wikipedia"),
 	"year-progress": () =>
@@ -53,6 +55,7 @@ export const reactRecipeSlugs = [
 	"simple-text",
 	"sunrise-sunset",
 	"weather",
+	"whos-overhead",
 	"wikipedia",
 	"year-progress",
 ] as const;
