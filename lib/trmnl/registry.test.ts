@@ -8,6 +8,7 @@ import {
 	resolveDeviceRenderTarget,
 } from "./palette-colors";
 import { parseRegistryList } from "./registry";
+import { createScreenProfile } from "./screen-profile";
 import { trmnlModelSchema, trmnlPaletteSchema } from "./types";
 
 function loadSnapshot(file: string): unknown[] {
@@ -23,6 +24,28 @@ function loadSnapshot(file: string): unknown[] {
 }
 
 describe("TRMNL registry contracts", () => {
+	it("normalizes unlimited image budgets and honors both scale variable generations", () => {
+		const model = trmnlModelSchema.parse({
+			...(loadSnapshot("models.json")[0] as object),
+			image_size_limit: null,
+			css: {
+				variables: [
+					["--device-ui-scale", "0.8"],
+					["--ui-scale", "1.2"],
+				],
+			},
+		});
+		expect(model.image_size_limit).toBeUndefined();
+		expect(
+			createScreenProfile({ width: model.width, height: model.height, model })
+				.uiScale,
+		).toBe(0.8);
+		model.css = { variables: { "--ui-scale": "1.2" } };
+		expect(
+			createScreenProfile({ width: model.width, height: model.height, model })
+				.uiScale,
+		).toBe(1.2);
+	});
 	it("accepts every bundled model snapshot entry", () => {
 		const invalid = loadSnapshot("models.json")
 			.map((model) => ({ model, result: trmnlModelSchema.safeParse(model) }))
