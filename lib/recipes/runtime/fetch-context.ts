@@ -19,6 +19,7 @@ export async function recipeFetch(
 	try {
 		const response = await globalThis.fetch(input, {
 			...init,
+			...(active ? { cache: "no-store" as const, next: undefined } : {}),
 			signal: AbortSignal.any(signals),
 		});
 		if (!response.ok && active) active.failures++;
@@ -54,4 +55,8 @@ export async function withRecipeDeadline<T>(
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+export function hasRecipeFetchContext(): boolean {
+	return Boolean(context.getStore());
 }

@@ -6,13 +6,17 @@ import {
 	type TagToken,
 	type TopLevelToken,
 } from "liquidjs";
-import { cacheKey } from "@/lib/cache/bounded-cache";
 import { db } from "@/lib/database/db";
 import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import { fetchPublicResource } from "@/lib/network/public-fetch";
 import { logger } from "./logger";
-import { type DataFreshness, resolveCachedData } from "./runtime/data-cache";
+import {
+	type DataFreshness,
+	recipeDataKey,
+	resolveCachedData,
+} from "./runtime/data-cache";
+import { loadRecipeRefreshSettings } from "./runtime/refresh-settings";
 import type { RecipeParamDefinitions } from "./zod-form";
 
 const TRMNL_CSS_URL = "/trmnl-framework/3.3.1/plugins.css";
@@ -475,14 +479,14 @@ export async function renderLiquidRecipe(
 				settings.polling_url,
 				customFieldValues,
 			);
+			const refresh = await loadRecipeRefreshSettings(slug, userId);
 			const cached = await resolveCachedData(
-				cacheKey({
-					userId: userId ?? null,
-					slug,
+				recipeDataKey(userId, slug, {
 					customFieldValues,
 					resolvedUrl,
 				}),
 				() => fetchPollingData(resolvedUrl),
+				refresh.seconds * 1000,
 			);
 			pollingData = cached.data;
 			freshness = cached.freshness;

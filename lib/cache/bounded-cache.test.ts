@@ -50,3 +50,28 @@ test("evicts by bytes and entries and separates tenant/config/profile keys", asy
 	);
 	expect(cacheKey({ a: 1, b: 2 })).toBe(cacheKey({ b: 2, a: 1 }));
 });
+
+test("invalidating a recipe prevents an older inflight request from repopulating it", async () => {
+	const cache = new BoundedCache<string>(100);
+	let finish!: (value: string) => void;
+	const old = cache.get(
+		"alice:weather",
+		1000,
+		() =>
+			new Promise<string>((resolve) => {
+				finish = resolve;
+			}),
+		(v) => v.length,
+	);
+	await Promise.resolve();
+	cache.invalidatePrefix("alice:");
+	await cache.get(
+		"alice:weather",
+		1000,
+		async () => "new",
+		(v) => v.length,
+	);
+	finish("old");
+	await old;
+	expect(cache.peek("alice:weather")?.value).toBe("new");
+});

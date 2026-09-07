@@ -1,4 +1,4 @@
-import { BoundedCache } from "@/lib/cache/bounded-cache";
+import { BoundedCache, cacheKey } from "@/lib/cache/bounded-cache";
 
 export type DataFreshness = { updatedAt: number; stale: boolean };
 const dataCache = new BoundedCache<Record<string, unknown>>(
@@ -27,4 +27,15 @@ export async function resolveCachedData(
 			freshness: { updatedAt: previous.createdAt, stale: true },
 		};
 	}
+}
+
+export function recipeDataKey(
+	userId: string | null | undefined,
+	slug: string,
+	identity: unknown,
+): string {
+	return `${cacheKey([userId ?? null, slug])}:${cacheKey(identity)}`;
+}
+export function invalidateRecipeData(userId: string, slug: string): void {
+	dataCache.invalidatePrefix(`${cacheKey([userId, slug])}:`);
 }

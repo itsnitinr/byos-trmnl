@@ -16,7 +16,7 @@ The pre-existing `data/trmnl/models.json` working-tree changes are retained, not
 - [x] Make screenshot readiness deterministic and pin framework assets.
 - [x] Add device calibration and visual regression coverage.
 - [x] Enforce device image byte budgets with a valid fallback.
-- [ ] Support per-recipe data refresh intervals.
+- [x] Support per-recipe data refresh intervals.
 - [ ] Add a render inspector.
 - [ ] Add playlist simulation for a selected date/time.
 - [ ] Add daily moon, botanical, and generative print recipes.
@@ -35,3 +35,5 @@ Palette checkpoint: exact PNG/BMP/WebP bytes matched the previous encoder for sy
 Readiness checkpoint: headless Chrome waited for delayed recipe content and image decode; corrupt images were rejected. Framework 3.3.1 CSS, JavaScript, and fonts are bundled with source hashes.
 
 Visual test server uses the pinned Node 22.22.3 runtime; Node 26 development route discovery failed locally. Calibration also exposed and fixed skipped dithering of data-URL images.
+
+Refresh controls require migration `0022_add_recipe_data_refresh.sql`; no existing database was migrated during this work.

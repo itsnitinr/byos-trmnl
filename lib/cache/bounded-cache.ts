@@ -15,6 +15,7 @@ export class BoundedCache<T> {
 	>();
 	private pending = new Map<string, Promise<CachedValue<T>>>();
 	private bytes = 0;
+	private generation = 0;
 	constructor(
 		private maxBytes: number,
 		private maxEntries = 128,
@@ -38,12 +39,13 @@ export class BoundedCache<T> {
 		if (cached && Date.now() - cached.createdAt < ttlMs) return cached;
 		const pending = this.pending.get(key);
 		if (pending) return { ...(await pending), status: "shared" };
+		const generation = this.generation;
 		const task = Promise.resolve()
 			.then(compute)
 			.then((value) => {
 				const createdAt = Date.now();
 				const bytes = sizeOf(value);
-				if (bytes <= this.maxBytes) {
+				if (bytes <= this.maxBytes && generation === this.generation) {
 					this.delete(key);
 					this.entries.set(key, { value, bytes, createdAt });
 					this.bytes += bytes;
@@ -59,10 +61,18 @@ export class BoundedCache<T> {
 				return { value, createdAt, status: "miss" as const };
 			})
 			.finally(() => {
-				this.pending.delete(key);
+				if (this.pending.get(key) === task) this.pending.delete(key);
 			});
 		this.pending.set(key, task);
 		return task;
+	}
+
+	invalidatePrefix(prefix: string): void {
+		this.generation++;
+		for (const key of this.entries.keys())
+			if (key.startsWith(prefix)) this.delete(key);
+		for (const key of this.pending.keys())
+			if (key.startsWith(prefix)) this.pending.delete(key);
 	}
 
 	delete(key: string): void {

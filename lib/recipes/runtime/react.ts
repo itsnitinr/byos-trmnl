@@ -2,12 +2,16 @@ import { cache } from "react";
 import { z } from "zod";
 import { getScreenParams } from "@/app/actions/screens-params";
 import { getCurrentUserId } from "@/lib/auth/get-user";
-import { cacheKey } from "@/lib/cache/bounded-cache";
 import { getReactRecipeDefinition } from "@/lib/recipes/registry";
 import type { AnyRecipeDefinition } from "@/lib/recipes/types";
 import { zodObjectToParamDefinitions } from "@/lib/recipes/zod-form";
-import { type DataFreshness, resolveCachedData } from "./data-cache";
+import {
+	type DataFreshness,
+	recipeDataKey,
+	resolveCachedData,
+} from "./data-cache";
 import { withRecipeDeadline } from "./fetch-context";
+import { loadRecipeRefreshSettings } from "./refresh-settings";
 
 /**
  * React-recipe runtime: given a slug + (optional) userId, resolve the
@@ -106,10 +110,9 @@ export const resolveReactRecipe = cache(
 		let freshness: DataFreshness | undefined;
 		if (definition.getData) {
 			const getData = definition.getData;
+			const refresh = await loadRecipeRefreshSettings(slug, userId);
 			const result = await resolveCachedData(
-				cacheKey({
-					userId: userId ?? null,
-					slug,
+				recipeDataKey(userId, slug, {
 					params,
 					version: definition.meta.version,
 				}),
@@ -126,6 +129,7 @@ export const resolveReactRecipe = cache(
 						throw new Error("Recipe data must be an object");
 					return validated as Record<string, unknown>;
 				},
+				refresh.seconds * 1000,
 			);
 			data = result.data;
 			freshness = result.freshness;
