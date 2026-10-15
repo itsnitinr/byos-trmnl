@@ -56,6 +56,28 @@ const renderField = (
 	value: unknown,
 	onChange: (key: string, value: unknown) => void,
 ) => {
+	if (definition.options) {
+		return (
+			<select
+				id={key}
+				name={key}
+				value={typeof value === "string" ? value : ""}
+				onChange={(event) => onChange(key, event.target.value)}
+				className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+			>
+				{!definition.options.includes("") && (
+					<option value="" disabled>
+						Select an option
+					</option>
+				)}
+				{definition.options.map((option) => (
+					<option key={option} value={option}>
+						{option ? option.charAt(0).toUpperCase() + option.slice(1) : "None"}
+					</option>
+				))}
+			</select>
+		);
+	}
 	switch (definition.type) {
 		case "boolean":
 			return (

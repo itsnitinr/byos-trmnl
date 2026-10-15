@@ -94,6 +94,21 @@ That's it. The recipe shows up in the sidebar, has a working parameter
 form (rendered from `paramsSchema`), and renders through the shared
 device-image pipeline. No `screens.json` to edit.
 
+## Generative Print
+
+The `generative-print` art recipe draws local SVG geometry with no API keys or
+external images. Its default `daily` style cycles through contours, orbits, and
+geometric tiles on successive calendar days. Choose a specific `style` to keep
+that family of artwork while its composition changes daily.
+
+Set `timezone` for the edition rollover, or set `date` (`YYYY-MM-DD`) to keep a
+favorite edition. An optional `seed` (up to 64 characters) creates a personal
+variation. The same date, seed, style, and screen dimensions reproduce the same
+print. The layout adapts to landscape, portrait, half-screen, and TRMNL X logical
+canvases; only black and white are used.
+
+![Generative print recipe and style controls](screenshots/generative-print.png)
+
 ## Fetching Data
 
 If a recipe needs to fetch data at render time, add a `getData` function

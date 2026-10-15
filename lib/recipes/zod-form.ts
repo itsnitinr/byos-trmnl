@@ -15,6 +15,7 @@ export type RecipeParamDefinition = {
 	description?: string;
 	default?: unknown;
 	placeholder?: string;
+	options?: string[];
 };
 
 export type RecipeParamDefinitions = Record<string, RecipeParamDefinition>;
@@ -60,12 +61,22 @@ function unwrapToBaseType(schema: z.ZodTypeAny): z.ZodTypeAny {
 
 function detectFieldType(schema: z.ZodTypeAny): RecipeParamType | null {
 	const base = unwrapToBaseType(schema);
+	if (readEnumOptions(base)) return "string";
 	const internals = (base as unknown as { _zod?: ZodInternals })._zod;
 	const t = internals?.def.type;
 	if (t === "string") return "string";
 	if (t === "number") return "number";
 	if (t === "boolean") return "boolean";
 	return null;
+}
+
+function readEnumOptions(schema: z.ZodTypeAny): string[] | undefined {
+	const base = unwrapToBaseType(schema);
+	if (!(base instanceof z.ZodEnum)) return undefined;
+	const options = base.options;
+	return options.every((option) => typeof option === "string")
+		? (options as string[])
+		: undefined;
 }
 
 /**
@@ -118,7 +129,7 @@ function humanizeKey(key: string): string {
 
 /**
  * Convert a `z.object({ … })` schema into the form's `RecipeParamDefinitions`
- * shape. Skips fields whose base type is not string/number/boolean — those
+ * shape. Skips fields whose base type is not string/number/boolean/string enum — those
  * are not user-editable today.
  */
 export function zodObjectToParamDefinitions(
@@ -134,10 +145,12 @@ export function zodObjectToParamDefinitions(
 		const meta = readMeta(fieldSchema);
 		const description = readDescription(fieldSchema);
 		const defaultValue = readDefault(fieldSchema);
+		const options = readEnumOptions(fieldSchema);
 
 		definitions[key] = {
 			label: meta.title ?? humanizeKey(key),
 			type,
+			...(options ? { options } : {}),
 			...(description !== undefined ? { description } : {}),
 			...(defaultValue !== undefined ? { default: defaultValue } : {}),
 			...(meta.placeholder !== undefined

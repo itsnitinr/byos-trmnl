@@ -19,6 +19,8 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 		import(
 			"../../app/(app)/recipes/screens/device-calibration/device-calibration"
 		),
+	"generative-print": () =>
+		import("../../app/(app)/recipes/screens/generative-print/generative-print"),
 	"github-contributions": () =>
 		import(
 			"../../app/(app)/recipes/screens/github-contributions/github-contributions"
@@ -59,6 +61,7 @@ export const reactRecipeSlugs = [
 	"calendar",
 	"daily-print",
 	"device-calibration",
+	"generative-print",
 	"github-contributions",
 	"hacker-news",
 	"local-news",
