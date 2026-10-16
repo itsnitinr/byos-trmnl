@@ -11,6 +11,8 @@ const DEFAULTS: Record<string, number> = {
 	"github-contributions": 900,
 	"whos-overhead": 30,
 	"sunrise-sunset": 3600,
+	// 49 grid points per fetch; half-hourly keeps a device well inside Open-Meteo's free tier.
+	"wind-map": 1800,
 };
 export function defaultDataRefreshSeconds(slug: string): number {
 	return DEFAULTS[slug] ?? 300;

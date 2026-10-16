@@ -109,6 +109,23 @@ canvases; only black and white are used.
 
 ![Generative print recipe and style controls](screenshots/generative-print.png)
 
+## Wind Map
+
+The `wind-map` recipe draws live surface wind around `latitude`/`longitude` as
+evenly spaced streamlines, with chevrons showing which way the air moves and
+heavier strokes for stronger wind. One Open-Meteo request (no API key) samples
+a 7 × 7 grid across `spanKm` (40–1500 km). Wider spans show fronts and pressure
+systems, and narrower spans show local effects from hills and coasts. The
+readout gives the speed at the centre, its compass direction, Beaufort force,
+gusts, and a two-hourly outlook for the next 12 hours, in `kmh`, `mph`, `kn`
+or `ms`.
+
+Each grid sample counts as one location against Open-Meteo's free-tier limits,
+so data refreshes every 30 minutes by default. If a fetch fails or returns a
+partial grid, the runtime keeps showing the last complete map.
+
+![Wind map around Reykjavík, 1200 km across](screenshots/wind-map.png)
+
 ## Fetching Data
 
 If a recipe needs to fetch data at render time, add a `getData` function
