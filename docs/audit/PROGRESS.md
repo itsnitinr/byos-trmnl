@@ -94,6 +94,11 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   restart (reproduced: curl "empty reply" 0.3 s after SIGTERM; fixed build drains a 5 s request).
 - [x] `/api/log` documented body shape was wrong; invalid JSON returned 500.
 - [x] Unused deps (18 `@radix-ui/react-*`, satori, jimp, zustand, …) and ESLint leftovers removed.
+- [x] `data:image/svg+xml;utf8,…` URLs (air-quality, sunrise-sunset, Graph/bitcoin-price charts)
+  failed image preparation → those recipes rendered 500 for any device profile.
+- [x] Device page hydration error (#418) from the relative "next refresh" chip.
+- [x] BYOS release check: no timeout, no single-flight, retried GitHub on every page view after a
+  failure.
 
 ### Maintainability
 
@@ -125,3 +130,9 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   pending claim row; first sign-up became admin via the shared pool; device display honoured a
   schedule stored as `"900"`; malformed `RSSI` ignored; image ETag → 304; `/api/log` 413/422/204;
   `/api/markup` runaway loop cut at 5.0 s; SIGTERM during that request → request completed, then exit.
+- After `3781135`: 29 Postgres integration tests (incl. `/api/display` and `/api/setup` route tests),
+  205 unit tests. Headless-Chrome smoke test (`/tmp/byos-smoke/smoke.cjs`, Playwright's Chromium via
+  puppeteer-core; the T3 in-app browser is blocked by AppArmor on this host) of 12 pages in
+  single-user mode: no page errors; only local-news (Reddit 403 from this IP) and whos-overhead
+  (upstream unavailable) previews fail, both upstream. Device page "System logs" tab now lists the
+  device's display rows.
