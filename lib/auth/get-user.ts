@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { cache } from "react";
 import { auth } from "./auth";
 
 /**
@@ -11,14 +12,16 @@ export type CurrentUser = {
 	id: string;
 	name: string;
 	email: string;
+	image?: string | null;
 	role?: string;
 } | null;
 
 /**
- * Get the current authenticated user from the session.
- * Returns null if auth is disabled or user is not authenticated.
+ * The signed-in user for this request. Memoized per server render, so the
+ * layout, data loaders and scoped queries share one session lookup instead
+ * of each hitting the session table. (Outside a render, `cache` is a no-op.)
  */
-export async function getCurrentUser(): Promise<CurrentUser> {
+const loadCurrentUser = cache(async (): Promise<CurrentUser> => {
 	if (!auth) {
 		return null;
 	}
@@ -35,8 +38,17 @@ export async function getCurrentUser(): Promise<CurrentUser> {
 		id: session.user.id,
 		name: session.user.name,
 		email: session.user.email,
+		image: session.user.image,
 		role: (session.user as { role?: string }).role,
 	};
+});
+
+/**
+ * Get the current authenticated user from the session.
+ * Returns null if auth is disabled or user is not authenticated.
+ */
+export async function getCurrentUser(): Promise<CurrentUser> {
+	return loadCurrentUser();
 }
 
 /**

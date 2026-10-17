@@ -1,8 +1,8 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import type React from "react";
 import { auth } from "@/lib/auth/auth";
+import { getCurrentUser } from "@/lib/auth/get-user";
 
 export default async function AdminLayout({
 	children,
@@ -16,13 +16,8 @@ export default async function AdminLayout({
 
 	await connection();
 
-	const session = await auth.api.getSession({
-		headers: await headers(),
-	});
-
-	// Check if user is admin
-	const userRole = (session?.user as { role?: string } | undefined)?.role;
-	if (userRole !== "admin") {
+	const user = await getCurrentUser();
+	if (user?.role !== "admin") {
 		redirect("/");
 	}
 
