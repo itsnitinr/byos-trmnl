@@ -1,6 +1,6 @@
-import { Liquid } from "liquidjs";
 import { proxyToTRMNL } from "@/lib/api/proxy";
 import {
+	createLiquidEngine,
 	registerCustomFilters,
 	removeCosmeticParens,
 	wrapNonLiquidScripts,
@@ -42,10 +42,7 @@ export async function POST(request: Request) {
 			? (body.variables as Record<string, unknown>)
 			: {};
 
-	const engine = new Liquid({
-		strictFilters: false,
-		strictVariables: false,
-	});
+	const engine = createLiquidEngine();
 	registerCustomFilters(engine);
 
 	try {

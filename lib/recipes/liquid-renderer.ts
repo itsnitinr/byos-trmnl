@@ -1,6 +1,7 @@
 import yaml from "js-yaml";
 import {
 	Liquid,
+	type LiquidOptions,
 	type Parser,
 	Tag,
 	type TagToken,
@@ -21,6 +22,28 @@ import type { RecipeParamDefinitions } from "./zod-form";
 
 const TRMNL_CSS_URL = "/trmnl-framework/3.3.1/plugins.css";
 const TRMNL_JS_URL = "/trmnl-framework/3.3.1/plugins.js";
+
+/**
+ * Templates come from installed recipes and `/api/markup`, i.e. from users and
+ * third-party repositories. Bound their cost so one template cannot stall the
+ * server: a loop like `{% for i in (1..100000000) %}` is cut off instead of
+ * running for minutes.
+ */
+export const LIQUID_LIMITS = {
+	parseLimit: 2_000_000, // template characters
+	renderLimit: 5_000, // ms per render
+	memoryLimit: 100_000_000, // liquidjs allocation units (strings/arrays created)
+} as const satisfies LiquidOptions;
+
+/** A lenient TRMNL-compatible engine with DoS limits applied. */
+export function createLiquidEngine(options: LiquidOptions = {}): Liquid {
+	return new Liquid({
+		strictFilters: false,
+		strictVariables: false,
+		...options,
+		...LIQUID_LIMITS,
+	});
+}
 
 export type CustomField = {
 	keyname?: string;
@@ -478,10 +501,7 @@ export async function renderLiquidRecipe(
 	let freshness: DataFreshness | undefined;
 	if (settings.polling_url) {
 		try {
-			const urlEngine = new Liquid({
-				strictFilters: false,
-				strictVariables: false,
-			});
+			const urlEngine = createLiquidEngine();
 			const resolvedUrl = await urlEngine.parseAndRender(
 				settings.polling_url,
 				customFieldValues,
@@ -549,11 +569,7 @@ export async function renderLiquidRecipe(
 	}
 
 	// Set up liquidjs engine with in-memory templates for partials
-	const engine = new Liquid({
-		strictFilters: false,
-		strictVariables: false,
-		templates,
-	});
+	const engine = createLiquidEngine({ templates });
 
 	// Register the custom {% template %}...{% endtemplate %} block tag
 	engine.registerTag("template", TemplateTag);
