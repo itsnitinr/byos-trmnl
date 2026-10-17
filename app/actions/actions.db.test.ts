@@ -7,6 +7,8 @@ jest.mock("@/lib/auth/get-user", () => ({
 	BYOS_MONO_USER_ID: "byos_mono_user",
 }));
 jest.mock("next/cache", () => ({ revalidatePath: jest.fn() }));
+// Single-user mode: system logs are readable without an admin session.
+jest.mock("@/lib/auth/auth", () => ({ auth: null }));
 
 const url = process.env.DATABASE_URL as string;
 
@@ -145,4 +147,67 @@ test("playlists are validated, saved, scoped and deletable while in use", async 
 	expect(
 		(await devices.fetchDeviceByFriendlyId("AAAAAA"))?.playlist_id,
 	).toBeNull();
+});
+
+describe("log queries", () => {
+	type SystemActions = typeof import("./system");
+	let system: SystemActions;
+
+	beforeAll(async () => {
+		system = require("./system") as SystemActions;
+		await withClient(url, (client) =>
+			client.query(`
+				INSERT INTO logs (friendly_id, log_data) VALUES
+					('AAAAAA', '{"message":"battery 100% ok"}'),
+					('AAAAAA', '{"message":"battery 1000 ok"}'),
+					('AAAAAA', '{"message":"wifi failed"}');
+				INSERT INTO system_logs (level, message, source, metadata) VALUES
+					('info', 'Display request successful', 'api/display', '{"deviceId":"AAAAAA"}'),
+					('info', 'Display request successful', 'api/display', '{"deviceId":"BBBBBB"}'),
+					('error', 'Render failed', 'api/bitmap', '{"deviceId":"AAAAAA"}');
+			`),
+		);
+	});
+
+	test("device log search treats % literally and filters by type", async () => {
+		const percent = await devices.fetchDeviceLogsWithFilters({
+			page: 1,
+			perPage: 10,
+			search: "100%",
+		});
+		expect(percent.total).toBe(1);
+
+		const errors = await devices.fetchDeviceLogsWithFilters({
+			page: 1,
+			perPage: 10,
+			type: "error",
+		});
+		expect(errors.logs.map((log) => log.log_data)).toEqual([
+			'{"message":"wifi failed"}',
+		]);
+
+		currentUser = "tenant-b";
+		expect(
+			(await devices.fetchDeviceLogsWithFilters({ page: 1, perPage: 10 }))
+				.total,
+		).toBe(0);
+	});
+
+	test("device system logs match the device and narrow by search", async () => {
+		const all = await system.fetchDeviceSystemLogs({
+			page: 1,
+			perPage: 10,
+			friendlyId: "AAAAAA",
+		});
+		expect(all.total).toBe(2);
+
+		const searched = await system.fetchDeviceSystemLogs({
+			page: 1,
+			perPage: 10,
+			friendlyId: "AAAAAA",
+			search: "Render",
+		});
+		expect(searched.logs.map((log) => log.message)).toEqual(["Render failed"]);
+		expect(searched.uniqueSources).toEqual(["api/bitmap", "api/display"]);
+	});
 });
