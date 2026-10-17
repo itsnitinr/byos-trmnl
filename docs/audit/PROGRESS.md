@@ -15,7 +15,8 @@ pnpm typecheck && pnpm lint && pnpm test
 # Integration tests need a throwaway Postgres (never point at real data):
 docker run -d --name byos-audit-pg -e POSTGRES_PASSWORD=audit -e POSTGRES_DB=byos_db \
   -p 127.0.0.1:55432:5432 postgres:16-alpine
-TEST_DATABASE_URL=postgres://postgres:audit@127.0.0.1:55432/byos_db?sslmode=disable pnpm test:db
+docker exec byos-audit-pg psql -U postgres -c "CREATE DATABASE byos_test"
+TEST_DATABASE_URL=postgres://postgres:audit@127.0.0.1:55432/byos_test?sslmode=disable pnpm test:db
 ```
 
 Conventions: Biome (tabs, double quotes), small focused commits (`type: summary`),
@@ -33,11 +34,11 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
 
 ### Correctness and reliability
 
-- [x] **FK bugs.** (migration 0023, `a1adb30`/`52074a0`) `logs.friendly_id → devices.friendly_id` has no `ON DELETE/UPDATE` action, so
+- [x] **FK bugs.** (migration 0023, `52074a0`) `logs.friendly_id → devices.friendly_id` has no `ON DELETE/UPDATE` action, so
   deleting a device that has logs fails, renaming its friendly ID fails, and deleting a *user* whose
   devices have logs fails (cascade is blocked). `devices.playlist_id` and `devices.mixup_id` have no
   `ON DELETE` action, so deleting a playlist/mixup that is assigned to any device fails.
-- [~] **Missing indexes.** (0023 adds logs + playlist_items indexes; claim pruning still open) `logs` has none (device-log pages filter by `friendly_id` and sort by
+- [x] **Missing indexes / unbounded tables.** (0023 indexes; claims expire + hourly pruning `0fa2870`) `logs` has none (device-log pages filter by `friendly_id` and sort by
   `created_at`; retention deletes by `created_at`). `playlist_items(playlist_id, order_index)` is
   read on every playlist-mode display request. `pending_device_claims` grows without bound.
 - [x] **Migrations only run from the UI.** (`lib/database/migrate.ts`, `AUTO_MIGRATE`) Extract the runner into `lib/database/migrate.ts` (on the
@@ -46,9 +47,9 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
 - [x] **Firmware OTA is forced on every device.** (`FIRMWARE_UPDATES=off`) `/api/display` advertises the latest official
   firmware to any device that reports an older version. DIY kits and other boards can be offered an
   image for different hardware. Add `FIRMWARE_UPDATES=auto|off`.
-- [ ] **Registry snapshots are written into the source tree** (`data/trmnl/*.json`) at runtime,
+- [x] **Registry snapshots are written into the source tree** (`data/trmnl/*.json`) at runtime,
   dirtying git checkouts. Write refreshed copies to a cache directory instead.
-- [ ] **No health endpoint / container healthcheck.**
+- [x] **No health endpoint / container healthcheck.** (`/api/health`, Docker HEALTHCHECK)
 - [x] **Logger drops error details**: `metadata: { error }` serialises `Error` as `{}`.
 
 ### Performance
@@ -67,15 +68,15 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
 - [x] **`byos_app` was a LOGIN role with the public password `byos_app_password`** (0009). With
   Postgres reachable (docker-compose publishes 5432 on all interfaces) anyone could log in and set
   `app.current_user_id` to any tenant, or read sessions. 0024 makes it NOLOGIN and revokes auth-table
-  access. Still open: bind the compose Postgres port to localhost.
+  access. Compose now publishes Postgres on 127.0.0.1 only.
 
-- [ ] **Liquid templates run without limits** (`renderLimit`, `parseLimit`, `memoryLimit`), both for
+- [x] **Liquid templates run without limits** (`renderLimit`, `parseLimit`, `memoryLimit`), both for
   installed recipes and `/api/markup`.
 - [x] **`POST /api/log` reads unbounded bodies**; cap size and entry count.
-- [ ] **Unauthenticated `/api/display` calls with random tokens create unbounded
+- [x] **Unauthenticated `/api/display` calls with random tokens create unbounded
   `pending_device_claims` rows**; expire and prune them.
-- [ ] **Session-protected API routes redirect to `/sign-in` (HTML)** instead of returning 401 JSON.
-- [ ] **No startup validation of required configuration** (e.g. `BETTER_AUTH_SECRET` when auth is
+- [x] **Session-protected API routes redirect to `/sign-in` (HTML)** instead of returning 401 JSON.
+- [x] **No startup validation of required configuration** (`lib/config.ts`) (e.g. `BETTER_AUTH_SECRET` when auth is
   enabled — better-auth falls back to a default secret).
 
 ### Found during the work
@@ -84,16 +85,25 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   every wake-up. Now falls back to the default screen.
 - [x] Malformed `RSSI`/`Battery-Voltage` headers wrote NaN and failed playlist-mode requests.
 - [x] pg pool had no `error` listener: an idle connection dropped by the server crashed the process.
+- [x] UI "None" playlist/mixup sent `''` into a UUID column → device save failed.
+- [x] Default refresh rate saved as a string → schedule silently ignored (180 s fallback).
+- [x] `/api/playlists/items` returned `parseInt(uuid)` ids.
+- [x] Device-page system-log search ORed with the device filter (widened results); device filter
+  matched a key the routes never write; LIKE wildcards in search unescaped.
+- [x] Chrome pool's SIGTERM handler called `process.exit(0)`, killing in-flight requests on every
+  restart (reproduced: curl "empty reply" 0.3 s after SIGTERM; fixed build drains a 5 s request).
+- [x] `/api/log` documented body shape was wrong; invalid JSON returned 500.
+- [x] Unused deps (18 `@radix-ui/react-*`, satori, jimp, zustand, …) and ESLint leftovers removed.
 
 ### Maintainability
 
 - [x] `findOrCreateDevice` duplicates the API-key and MAC branches almost line for line.
-- [ ] Server actions accept unvalidated input (`updateDevice`, playlist saves).
-- [ ] Recipe data-refresh defaults live in a slug-keyed map far from the recipes.
-- [ ] Dead code: `cache-handler.js` (not wired into `next.config.ts`), duplicated filter builders in
+- [x] Server actions accept unvalidated input (`updateDevice`, playlist saves).
+- [x] Recipe data-refresh defaults live in a slug-keyed map far from the recipes.
+- [x] Dead code: `cache-handler.js` (not wired into `next.config.ts`), duplicated filter builders in
   log actions.
-- [ ] README links to a non-existent `app/recipes/README.md`.
-- [ ] CI does not run a production build or database integration tests.
+- [x] README links to a non-existent `app/recipes/README.md`.
+- [x] CI does not run a production build or database integration tests.
 
 ## Decisions
 
@@ -109,3 +119,9 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   image (1-bit PNG) → log upload → display; playlist rotation persisted `current_playlist_index`;
   deleting an in-use playlist succeeded and the device got the "Playlist mode needs a playlist" image.
   Warm `/api/display` ≈ 22 ms locally.
+- After `45ca0cf`: 198 unit + 20 Postgres integration tests, tsc/Biome clean, production build with no
+  generated-file drift. Standalone server with **auth enabled**: missing-secret boot report; `/api/health`
+  200; `/api/devices` without session → 401 JSON, pages → 307 sign-in; unknown device → claim code +
+  pending claim row; first sign-up became admin via the shared pool; device display honoured a
+  schedule stored as `"900"`; malformed `RSSI` ignored; image ETag → 304; `/api/log` 413/422/204;
+  `/api/markup` runaway loop cut at 5.0 s; SIGTERM during that request → request completed, then exit.
