@@ -1,3 +1,4 @@
+import { DEFAULT_DEVICE_SCREEN } from "@/lib/device/defaults";
 import {
 	DEFAULT_IMAGE_HEIGHT,
 	DEFAULT_IMAGE_WIDTH,
@@ -67,10 +68,9 @@ export async function selectDisplayForDevice(
 	const dimensions = defaultDimensions(profile, device);
 	const width = hints.width || dimensions.width;
 	const height = hints.height || dimensions.height;
-	if (!device.screen) {
-		throw new Error("Device screen is not configured");
-	}
-	const screen = device.screen;
+	// Devices added from the UI by API key start without a screen; show the
+	// default instead of failing every wake-up until one is picked.
+	const screen = device.screen || DEFAULT_DEVICE_SCREEN;
 
 	// Image URLs must be self-contained. If the URL only carried width/
 	// height, the bitmap route would infer model and palette from request

@@ -1,12 +1,17 @@
+import { randomBytes } from "node:crypto";
 import { afterResponse } from "@/lib/cache/after-response";
 import { checkDbConnection } from "@/lib/database/utils";
-import {
-	DISPLAY_FALLBACK_REFRESH_SECONDS,
-	normalizeRefreshSchedule,
-} from "@/lib/device/defaults";
+import { findOrCreateDevice } from "@/lib/device/lookup";
 import { parseRequestHeaders } from "@/lib/device/request-headers";
-import { selectDisplayForDevice } from "@/lib/display/select";
 import {
+	buildClaimResponse,
+	buildDisplayResponse,
+	buildErrorResponse,
+} from "@/lib/display/responses";
+import { selectDisplayForDevice } from "@/lib/display/select";
+import { recordDisplayVisit } from "@/lib/display/visit";
+import {
+	firmwareUpdatesEnabled,
 	getLatestFirmware,
 	isUpdateAvailable,
 	peekLatestFirmware,
@@ -17,17 +22,15 @@ import {
 	buildDeviceImageFilename,
 	buildDeviceImageUrl,
 } from "@/lib/render/device-image-url";
-import {
-	buildClaimResponse,
-	buildDisplayResponse,
-	buildErrorResponse,
-	calculateRefreshRate,
-	findOrCreateDevice,
-	getActivePlaylistItem,
-	updateDeviceStatus,
-} from "./utils";
+import type { Device } from "@/lib/types";
 
-export const DEFAULT_REFRESH_RATE = DISPLAY_FALLBACK_REFRESH_SECONDS;
+/**
+ * GET /api/display — the device's wake-up call: which image to show next,
+ * when to wake again, and whether to update firmware.
+ *
+ * Common path: one api-key-scoped device read, one user-scoped session for
+ * the playlist read + status write, and log rows flushed after the response.
+ */
 
 function errorImageQuery(baseQueryParams: string, message: string): string {
 	const params = new URLSearchParams(baseQueryParams);
@@ -35,12 +38,32 @@ function errorImageQuery(baseQueryParams: string, message: string): string {
 	return params.toString();
 }
 
+function firmwareFields(device: Device): Record<string, unknown> {
+	if (!firmwareUpdatesEnabled()) return {};
+	const latest = peekLatestFirmware();
+	// Refresh the cached release after responding; never on the device's clock.
+	afterResponse(async () => {
+		await getLatestFirmware();
+	});
+	if (!latest || !isUpdateAvailable(device.firmware_version, latest.version)) {
+		return {};
+	}
+	logInfo("Firmware update available", {
+		source: "api/display",
+		metadata: {
+			deviceId: device.friendly_id,
+			currentVersion: device.firmware_version,
+			latestVersion: latest.version,
+		},
+	});
+	return { update_firmware: true, firmware_url: latest.downloadUrl };
+}
+
 export async function GET(request: Request) {
 	const headers = parseRequestHeaders(request);
 	const baseUrl = `${headers.hostUrl}/api/bitmap`;
-	const uniqueId =
-		Math.random().toString(36).substring(2, 7) +
-		Date.now().toString(36).slice(-3);
+	// Unique per response so firmware treats each image as new.
+	const uniqueId = randomBytes(5).toString("hex");
 
 	if (!headers.apiKey) {
 		return buildErrorResponse(
@@ -52,18 +75,12 @@ export async function GET(request: Request) {
 	}
 
 	const { ready } = await checkDbConnection();
-
 	if (!ready) {
 		logError("Database not available for display request", {
 			source: "api/display",
 		});
 		return buildErrorResponse("Database not available", baseUrl, uniqueId, 503);
 	}
-
-	logInfo("Display API Request", {
-		source: "api/display",
-		metadata: { apiKey: headers.apiKey?.slice(0, 6) },
-	});
 
 	try {
 		const lookup = await findOrCreateDevice(headers);
@@ -74,7 +91,7 @@ export async function GET(request: Request) {
 				logInfo("Returning pending device claim code", {
 					source: "api/display",
 					metadata: {
-						apiKey: headers.apiKey?.slice(0, 6),
+						apiKey: headers.apiKey.slice(0, 6),
 						macAddress: headers.macAddress,
 					},
 				});
@@ -82,7 +99,7 @@ export async function GET(request: Request) {
 			}
 			logError("Error fetching/creating device", {
 				source: "api/display",
-				metadata: { apiKey: headers.apiKey?.slice(0, 6) },
+				metadata: { apiKey: headers.apiKey.slice(0, 6) },
 			});
 			return buildErrorResponse("Device not found", baseUrl, uniqueId);
 		}
@@ -92,157 +109,77 @@ export async function GET(request: Request) {
 			width: headers.width,
 			height: headers.height,
 		});
-
-		let { screen: screenToDisplay, imageUrl } = selection;
-		let dynamicRefreshRate: number;
-		let nextPlaylistIndex: number | undefined;
-
-		switch (device.display_mode) {
-			case DeviceDisplayMode.PLAYLIST: {
-				if (device.playlist_id) {
-					const activeItem = await getActivePlaylistItem(
-						device.playlist_id,
-						device.current_playlist_index ?? -1,
-						device.timezone || "UTC",
-						device.user_id,
-					);
-
-					if (activeItem) {
-						screenToDisplay = activeItem.screen_id;
-						dynamicRefreshRate = activeItem.duration;
-						nextPlaylistIndex = activeItem.order_index;
-					} else {
-						logInfo("No active playlist item found", {
-							source: "api/display",
-							metadata: { deviceId: device.friendly_id },
-						});
-						screenToDisplay = "error";
-						imageUrl = buildDeviceImageUrl({
-							baseUrl,
-							imagePath: "error",
-							profile: selection.profile,
-							query: errorImageQuery(
-								selection.baseQueryParams,
-								"No active playlist item",
-							),
-						});
-						dynamicRefreshRate = DEFAULT_REFRESH_RATE;
-					}
-				} else {
-					screenToDisplay = "error";
-					imageUrl = buildDeviceImageUrl({
-						baseUrl,
-						imagePath: "error",
-						profile: selection.profile,
-						query: errorImageQuery(
-							selection.baseQueryParams,
-							"Playlist mode needs a playlist",
-						),
-					});
-					dynamicRefreshRate = DEFAULT_REFRESH_RATE;
-				}
-				if (screenToDisplay !== "error") {
-					imageUrl = buildDeviceImageUrl({
-						baseUrl,
-						imagePath: screenToDisplay,
-						profile: selection.profile,
-						query: selection.baseQueryParams,
-					});
-				}
-				break;
-			}
-
-			case DeviceDisplayMode.MIXUP:
-				if (device.mixup_id) {
-					imageUrl = buildDeviceImageUrl({
-						baseUrl,
-						imagePath: `mixup/${device.mixup_id}`,
-						profile: selection.profile,
-						query: `${selection.baseQueryParams}&access_token=${encodeURIComponent(
-							headers.apiKey,
-						)}`,
-					});
-					logInfo("Using mixup display mode", {
-						source: "api/display",
-						metadata: {
-							deviceId: device.friendly_id,
-							mixupId: device.mixup_id,
-						},
-					});
-				}
-				dynamicRefreshRate = calculateRefreshRate(
-					normalizeRefreshSchedule(device.refresh_schedule),
-					DEFAULT_REFRESH_RATE,
-					device.timezone || "UTC",
-				);
-				break;
-
-			default:
-				dynamicRefreshRate = calculateRefreshRate(
-					normalizeRefreshSchedule(device.refresh_schedule),
-					DEFAULT_REFRESH_RATE,
-					device.timezone || "UTC",
-				);
-				break;
-		}
-
-		await updateDeviceStatus(
+		const { playlistItem, refreshRate } = await recordDisplayVisit(
 			device,
 			headers,
-			dynamicRefreshRate,
-			nextPlaylistIndex,
 		);
+
+		let screen = selection.screen;
+		let imageUrl = selection.imageUrl;
+		const imageFor = (imagePath: string, query = selection.baseQueryParams) =>
+			buildDeviceImageUrl({
+				baseUrl,
+				imagePath,
+				profile: selection.profile,
+				query,
+			});
+
+		if (device.display_mode === DeviceDisplayMode.PLAYLIST) {
+			if (playlistItem) {
+				screen = playlistItem.screen_id;
+				imageUrl = imageFor(screen);
+			} else {
+				screen = "error";
+				imageUrl = imageFor(
+					"error",
+					errorImageQuery(
+						selection.baseQueryParams,
+						device.playlist_id
+							? "No active playlist item"
+							: "Playlist mode needs a playlist",
+					),
+				);
+			}
+		} else if (
+			device.display_mode === DeviceDisplayMode.MIXUP &&
+			device.mixup_id
+		) {
+			// Firmware fetches images without headers, so the token rides in the URL.
+			imageUrl = imageFor(
+				`mixup/${device.mixup_id}`,
+				`${selection.baseQueryParams}&access_token=${encodeURIComponent(headers.apiKey)}`,
+			);
+		}
 
 		logInfo("Display request successful", {
 			source: "api/display",
 			metadata: {
 				deviceId: device.friendly_id,
-				screen: screenToDisplay,
-				refreshRate: dynamicRefreshRate,
+				screen,
+				refreshRate,
 				displayMode: device.display_mode,
 			},
 		});
 
 		const orientation = device.screen_orientation || "landscape";
-		const firmwareExtra: Record<string, unknown> = {
-			// 0 = portrait (no rotation), 1 = landscape (90° rotation).
-			image_rotate: orientation === "landscape" ? 1 : 0,
-			// Display tuning profile. Firmware reads this only when it sent
-			// `temperature-profile: true` in the request.
-			temperature_profile: device.temperature_profile ?? "default",
-		};
-
-		const latestFirmware = peekLatestFirmware();
-		afterResponse(async () => {
-			await getLatestFirmware();
-		});
-		if (
-			latestFirmware &&
-			isUpdateAvailable(device.firmware_version, latestFirmware.version)
-		) {
-			firmwareExtra.update_firmware = true;
-			firmwareExtra.firmware_url = latestFirmware.downloadUrl;
-			logInfo("Firmware update available", {
-				source: "api/display",
-				metadata: {
-					deviceId: device.friendly_id,
-					currentVersion: device.firmware_version,
-					latestVersion: latestFirmware.version,
-				},
-			});
-		}
-
 		return buildDisplayResponse(
 			imageUrl,
-			buildDeviceImageFilename(screenToDisplay, uniqueId, selection.profile),
-			dynamicRefreshRate,
-			firmwareExtra,
+			buildDeviceImageFilename(screen, uniqueId, selection.profile),
+			refreshRate,
+			{
+				// 0 = portrait (no rotation), 1 = landscape (90° rotation).
+				image_rotate: orientation === "landscape" ? 1 : 0,
+				// Display tuning profile. Firmware reads this only when it sent
+				// `temperature-profile: true` in the request.
+				temperature_profile: device.temperature_profile ?? "default",
+				...firmwareFields(device),
+			},
 		);
 	} catch (error) {
 		logError(error instanceof Error ? error : new Error(String(error)), {
 			source: "api/display",
 			metadata: {
-				apiKey: headers.apiKey?.slice(0, 6),
+				apiKey: headers.apiKey.slice(0, 6),
 				reportedModel: headers.model,
 				uniqueId,
 			},

@@ -119,6 +119,16 @@ async function fetchLatestFirmware(): Promise<FirmwareRelease | null> {
 }
 
 /**
+ * Whether `/api/display` may offer firmware updates (`FIRMWARE_UPDATES`,
+ * `auto` by default). Set `off` for DIY kits and other boards that run a
+ * custom or board-specific build: the advertised image is the generic
+ * official release, and flashing it onto different hardware fails.
+ */
+export function firmwareUpdatesEnabled(): boolean {
+	return process.env.FIRMWARE_UPDATES?.toLowerCase() !== "off";
+}
+
+/**
  * Clear the firmware cache (useful for testing)
  */
 export function clearFirmwareCache(): void {
