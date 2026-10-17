@@ -18,6 +18,14 @@ export async function register() {
 	const { reportRuntimeConfig } = await import("./lib/config");
 	reportRuntimeConfig();
 
+	// Write queued system log rows while Next.js drains requests on shutdown.
+	const { flushLogs } = await import("./lib/logger");
+	for (const signal of ["SIGTERM", "SIGINT"] as const) {
+		process.once(signal, () => {
+			void flushLogs();
+		});
+	}
+
 	if (process.env.AUTO_MIGRATE === "true" && process.env.DATABASE_URL) {
 		try {
 			const { runMigrations } = await import("./lib/database/migrate");
