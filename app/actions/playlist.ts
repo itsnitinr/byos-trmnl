@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import {
 	withUserScope,
@@ -9,8 +10,55 @@ import {
 import { checkDbConnection } from "@/lib/database/utils";
 import type { Playlist, PlaylistItem } from "@/lib/types";
 
+const WEEKDAYS = [
+	"sunday",
+	"monday",
+	"tuesday",
+	"wednesday",
+	"thursday",
+	"friday",
+	"saturday",
+] as const;
+
+const playlistIdSchema = z.uuid();
+
+const clockTime = z
+	.string()
+	.regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, "Use HH:MM (24-hour)");
+const optionalClockTime = z.preprocess(
+	(value) => (value === "" || value === null ? undefined : value),
+	clockTime.optional(),
+);
+
+const playlistSchema = z.object({
+	id: z.uuid().optional(),
+	name: z.string().trim().min(1, "Name is required").max(100),
+	items: z
+		.array(
+			z.object({
+				screen_id: z.string().trim().min(1).max(200),
+				duration: z.coerce.number().int().min(1).max(86_400),
+				order_index: z.coerce.number().int().min(0),
+				start_time: optionalClockTime,
+				end_time: optionalClockTime,
+				days_of_week: z.array(z.enum(WEEKDAYS)).max(7).optional(),
+			}),
+		)
+		.max(200),
+});
+
+function validationMessage(error: z.ZodError): string {
+	const issue = error.issues[0];
+	const field = issue?.path.join(".");
+	return issue
+		? field
+			? `${field}: ${issue.message}`
+			: issue.message
+		: "Invalid input";
+}
+
 /**
- * Fetch all playlists with their items
+ * Fetch all playlists
  */
 export async function fetchPlaylists(): Promise<Playlist[]> {
 	const { ready } = await checkDbConnection();
@@ -44,6 +92,9 @@ export async function fetchPlaylistWithItems(playlistId: string): Promise<{
 		console.warn("Database client not initialized");
 		return { playlist: null, items: [] };
 	}
+	if (!playlistIdSchema.safeParse(playlistId).success) {
+		return { playlist: null, items: [] };
+	}
 
 	const [playlist, items] = await withUserScope((scopedDb) =>
 		Promise.all([
@@ -72,76 +123,8 @@ export async function fetchPlaylistWithItems(playlistId: string): Promise<{
 }
 
 /**
- * Create a new playlist
- */
-export async function createPlaylist(name: string): Promise<{
-	success: boolean;
-	playlist?: Playlist;
-	error?: string;
-}> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	const userId = await getCurrentUserId();
-
-	try {
-		const playlist = await withUserScope((scopedDb) =>
-			scopedDb
-				.insertInto("playlists")
-				.values({ name, user_id: userId })
-				.returningAll()
-				.executeTakeFirst(),
-		);
-
-		return { success: true, playlist: playlist as unknown as Playlist };
-	} catch (error) {
-		console.error("Error creating playlist:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
-}
-
-/**
- * Update a playlist
- */
-export async function updatePlaylist(
-	playlistId: string,
-	name: string,
-): Promise<{ success: boolean; error?: string }> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	try {
-		await withUserScope((scopedDb) =>
-			scopedDb
-				.updateTable("playlists")
-				.set({ name, updated_at: new Date().toISOString() })
-				.where("id", "=", playlistId)
-				.execute(),
-		);
-
-		return { success: true };
-	} catch (error) {
-		console.error("Error updating playlist:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
-}
-
-/**
- * Delete a playlist and all its items
+ * Delete a playlist and all its items. Devices using it fall back to their
+ * "Playlist mode needs a playlist" screen (migration 0023 clears the link).
  */
 export async function deletePlaylist(playlistId: string): Promise<{
 	success: boolean;
@@ -153,11 +136,20 @@ export async function deletePlaylist(playlistId: string): Promise<{
 		console.warn("Database client not initialized");
 		return { success: false, error: "Database client not initialized" };
 	}
+	if (!playlistIdSchema.safeParse(playlistId).success) {
+		return { success: false, error: "Invalid playlist id" };
+	}
 
 	try {
-		await withUserScope((scopedDb) =>
-			scopedDb.deleteFrom("playlists").where("id", "=", playlistId).execute(),
+		const result = await withUserScope((scopedDb) =>
+			scopedDb
+				.deleteFrom("playlists")
+				.where("id", "=", playlistId)
+				.executeTakeFirst(),
 		);
+		if (Number(result.numDeletedRows) === 0) {
+			return { success: false, error: "Playlist not found" };
+		}
 
 		revalidatePath("/playlists");
 		return { success: true };
@@ -171,117 +163,7 @@ export async function deletePlaylist(playlistId: string): Promise<{
 }
 
 /**
- * Create a playlist item
- */
-export async function createPlaylistItem(
-	playlistId: string,
-	item: Omit<PlaylistItem, "id" | "playlist_id" | "created_at">,
-): Promise<{ success: boolean; item?: PlaylistItem; error?: string }> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	try {
-		const newItem = await withUserScope((scopedDb) =>
-			scopedDb
-				.insertInto("playlist_items")
-				.values({
-					playlist_id: playlistId,
-					screen_id: item.screen_id,
-					duration: item.duration,
-					start_time: item.start_time,
-					end_time: item.end_time,
-					days_of_week: item.days_of_week
-						? JSON.stringify(item.days_of_week)
-						: null,
-					order_index: item.order_index,
-				})
-				.returningAll()
-				.executeTakeFirst(),
-		);
-
-		return { success: true, item: newItem as unknown as PlaylistItem };
-	} catch (error) {
-		console.error("Error creating playlist item:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
-}
-
-/**
- * Update a playlist item
- */
-export async function updatePlaylistItem(
-	itemId: string,
-	updates: Partial<Omit<PlaylistItem, "id" | "playlist_id" | "created_at">>,
-): Promise<{ success: boolean; error?: string }> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	try {
-		const updateData: Record<string, unknown> = { ...updates };
-		if (updates.days_of_week) {
-			updateData.days_of_week = JSON.stringify(updates.days_of_week);
-		}
-
-		await withUserScope((scopedDb) =>
-			scopedDb
-				.updateTable("playlist_items")
-				.set(updateData)
-				.where("id", "=", itemId)
-				.execute(),
-		);
-
-		return { success: true };
-	} catch (error) {
-		console.error("Error updating playlist item:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
-}
-
-/**
- * Delete a playlist item
- */
-export async function deletePlaylistItem(itemId: string): Promise<{
-	success: boolean;
-	error?: string;
-}> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	try {
-		await withUserScope((scopedDb) =>
-			scopedDb.deleteFrom("playlist_items").where("id", "=", itemId).execute(),
-		);
-
-		return { success: true };
-	} catch (error) {
-		console.error("Error deleting playlist item:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
-}
-
-/**
- * Save a complete playlist with all its items
+ * Save a complete playlist with all its items (create when `id` is absent).
  */
 export async function savePlaylistWithItems(playlistData: {
 	id?: string;
@@ -303,62 +185,72 @@ export async function savePlaylistWithItems(playlistData: {
 		return { success: false, error: "Database client not initialized" };
 	}
 
+	const parsed = playlistSchema.safeParse(playlistData);
+	if (!parsed.success) {
+		return { success: false, error: validationMessage(parsed.error) };
+	}
+	const playlist = parsed.data;
 	const userId = await getCurrentUserId();
+	if (!userId) {
+		return { success: false, error: "You must be signed in" };
+	}
 
 	try {
-		return await withUserScopeTransaction(async (trx) => {
-			let playlistId: string;
+		const playlistId = await withUserScopeTransaction(async (trx) => {
+			let id: string;
 
-			// Create or update playlist
-			if (playlistData.id) {
-				// Update existing playlist (RLS handles user check)
-				await trx
+			if (playlist.id) {
+				// RLS limits this to the caller's playlists.
+				const updated = await trx
 					.updateTable("playlists")
 					.set({
-						name: playlistData.name,
+						name: playlist.name,
 						updated_at: new Date().toISOString(),
 					})
-					.where("id", "=", playlistData.id)
-					.execute();
+					.where("id", "=", playlist.id)
+					.executeTakeFirst();
+				if (Number(updated.numUpdatedRows) === 0) return null;
 
-				playlistId = playlistData.id;
-
-				// Delete existing items
+				id = playlist.id;
 				await trx
 					.deleteFrom("playlist_items")
-					.where("playlist_id", "=", playlistId)
+					.where("playlist_id", "=", id)
 					.execute();
 			} else {
-				// Create new playlist (include user_id for new records)
-				const newPlaylist = await trx
+				const created = await trx
 					.insertInto("playlists")
-					.values({ name: playlistData.name, user_id: userId })
+					.values({ name: playlist.name, user_id: userId })
 					.returning("id")
 					.executeTakeFirstOrThrow();
-
-				playlistId = newPlaylist.id;
+				id = created.id;
 			}
 
-			// Insert new items
-			if (playlistData.items.length > 0) {
-				const itemsToInsert = playlistData.items.map((item) => ({
-					playlist_id: playlistId,
-					screen_id: item.screen_id,
-					duration: item.duration,
-					start_time: item.start_time || null,
-					end_time: item.end_time || null,
-					days_of_week: item.days_of_week
-						? JSON.stringify(item.days_of_week)
-						: null,
-					order_index: item.order_index,
-				}));
-
-				await trx.insertInto("playlist_items").values(itemsToInsert).execute();
+			if (playlist.items.length > 0) {
+				await trx
+					.insertInto("playlist_items")
+					.values(
+						playlist.items.map((item) => ({
+							playlist_id: id,
+							screen_id: item.screen_id,
+							duration: item.duration,
+							start_time: item.start_time ?? null,
+							end_time: item.end_time ?? null,
+							days_of_week: item.days_of_week?.length
+								? JSON.stringify(item.days_of_week)
+								: null,
+							order_index: item.order_index,
+						})),
+					)
+					.execute();
 			}
-
-			revalidatePath("/playlists");
-			return { success: true, playlistId };
+			return id;
 		});
+
+		if (!playlistId) {
+			return { success: false, error: "Playlist not found" };
+		}
+		revalidatePath("/playlists");
+		return { success: true, playlistId };
 	} catch (error) {
 		console.error("Error saving playlist with items:", error);
 		return {

@@ -125,7 +125,10 @@ export default function DeviceClientPage({
 				...editedDevice,
 				[parent]: {
 					...(editedDevice[parent as keyof Device] as Record<string, unknown>),
-					[child]: value,
+					// Rates are seconds; keep them numeric so the schedule stays valid.
+					[child]: child.endsWith("refresh_rate")
+						? Number.parseInt(value, 10)
+						: value,
 				},
 			});
 		} else {
@@ -184,7 +187,10 @@ export default function DeviceClientPage({
 				...editedDevice,
 				[parent]: {
 					...(editedDevice[parent as keyof Device] as Record<string, unknown>),
-					[child]: value,
+					// Rates are seconds; keep them numeric so the schedule stays valid.
+					[child]: child.endsWith("refresh_rate")
+						? Number.parseInt(value, 10)
+						: value,
 				},
 			});
 		} else {

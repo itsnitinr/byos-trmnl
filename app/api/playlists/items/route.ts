@@ -36,7 +36,7 @@ export async function GET(_request: Request) {
 
 		const playlistItems = items.map((item) => {
 			return {
-				id: Number.parseInt(item.id, 10),
+				id: item.id,
 				playlist_id: item.playlist_id,
 				screen_id: item.screen_id,
 				duration: item.duration,

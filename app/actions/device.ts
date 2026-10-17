@@ -17,6 +17,10 @@ import {
 	normalizeClaimCode,
 	pendingClaimCutoff,
 } from "@/lib/device/pending-device-claims";
+import {
+	describeValidationError,
+	deviceUpdateSchema,
+} from "@/lib/device/update-schema";
 import type { Device, Log } from "@/lib/types";
 import { generateFriendlyId, generateMockMacAddress } from "@/utils/helpers";
 
@@ -238,7 +242,8 @@ export async function fetchDeviceLogsWithFilters({
 }
 
 /**
- * Update a device
+ * Update a device. Input is validated and normalized server-side; RLS limits
+ * the update to the caller's own devices.
  */
 export async function updateDevice(
 	device: Partial<Device> & { id: number },
@@ -250,63 +255,56 @@ export async function updateDevice(
 		return { success: false, error: "Database client not initialized" };
 	}
 
-	// Prepare the update data
-	// We construct object with optional properties explicitly
-	const updateData: Record<string, unknown> = {};
+	const parsed = deviceUpdateSchema.safeParse(device);
+	if (!parsed.success) {
+		return { success: false, error: describeValidationError(parsed.error) };
+	}
+	const { id, refresh_schedule, ...fields } = parsed.data;
 
-	if (device.name !== undefined) updateData.name = device.name;
-	if (device.mac_address !== undefined)
-		updateData.mac_address = device.mac_address;
-	if (device.api_key !== undefined) updateData.api_key = device.api_key;
-	if (device.friendly_id !== undefined)
-		updateData.friendly_id = device.friendly_id;
-	if (device.timezone !== undefined) updateData.timezone = device.timezone;
-	if (device.refresh_schedule !== undefined)
-		updateData.refresh_schedule = device.refresh_schedule
-			? JSON.stringify(device.refresh_schedule)
+	const updateData: Record<string, unknown> = {
+		...Object.fromEntries(
+			Object.entries(fields).filter(([, value]) => value !== undefined),
+		),
+		updated_at: new Date().toISOString(),
+	};
+	if (refresh_schedule !== undefined) {
+		updateData.refresh_schedule = refresh_schedule
+			? serializeRefreshSchedule(refresh_schedule)
 			: null;
-	if (device.screen !== undefined) updateData.screen = device.screen;
-	if (device.playlist_id !== undefined)
-		updateData.playlist_id = device.playlist_id;
-	if (device.mixup_id !== undefined) updateData.mixup_id = device.mixup_id;
-	if (device.display_mode !== undefined)
-		updateData.display_mode = device.display_mode;
-	if (device.battery_voltage !== undefined)
-		updateData.battery_voltage = device.battery_voltage;
-	if (device.firmware_version !== undefined)
-		updateData.firmware_version = device.firmware_version;
-	if (device.rssi !== undefined) updateData.rssi = device.rssi;
-	if (device.screen_width !== undefined)
-		updateData.screen_width = device.screen_width;
-	if (device.screen_height !== undefined)
-		updateData.screen_height = device.screen_height;
-	if (device.screen_orientation !== undefined)
-		updateData.screen_orientation = device.screen_orientation;
-	if (device.model !== undefined) updateData.model = device.model || null;
-	if (device.palette_id !== undefined)
-		updateData.palette_id = device.palette_id || null;
-	if (device.temperature_profile !== undefined)
-		updateData.temperature_profile = device.temperature_profile;
-
-	updateData.updated_at = new Date().toISOString();
+	}
 
 	try {
-		await withUserScope((scopedDb) =>
+		const result = await withUserScope((scopedDb) =>
 			scopedDb
 				.updateTable("devices")
 				.set(updateData)
-				.where("id", "=", String(device.id))
-				.execute(),
+				.where("id", "=", String(id))
+				.executeTakeFirst(),
 		);
+		if (Number(result.numUpdatedRows) === 0) {
+			return { success: false, error: "Device not found" };
+		}
 
 		return { success: true };
 	} catch (error) {
 		console.error("Error updating device:", error);
 		return {
 			success: false,
-			error: error instanceof Error ? error.message : String(error),
+			error: friendlyDatabaseError(error),
 		};
 	}
+}
+
+/** Map constraint violations to messages a user can act on. */
+function friendlyDatabaseError(error: unknown): string {
+	const constraint = (error as { constraint?: string })?.constraint ?? "";
+	if (constraint.includes("api_key"))
+		return "Another device already uses this API key";
+	if (constraint.includes("mac_address"))
+		return "Another device already uses this MAC address";
+	if (constraint.includes("friendly_id"))
+		return "Another device already uses this friendly ID";
+	return error instanceof Error ? error.message : String(error);
 }
 
 /**
