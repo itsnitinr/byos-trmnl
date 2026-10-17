@@ -39,6 +39,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+	await (require("@/lib/logger") as typeof import("@/lib/logger")).flushLogs();
 	const { db } =
 		require("@/lib/database/db") as typeof import("@/lib/database/db");
 	await db.destroy();
