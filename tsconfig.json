@@ -27,7 +27,6 @@
 		"**/*.ts",
 		"**/*.tsx",
 		".next/types/**/*.ts",
-		"cache-handler.js",
 		".next/dev/types/**/*.ts"
 	],
 	"exclude": ["node_modules", "**/*.md"]
