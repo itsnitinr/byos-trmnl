@@ -52,3 +52,50 @@ jobs:
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+
+  db-test:
+    name: Database Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: byos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:db
+        env:
+          TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/byos_test?sslmode=disable
+
+  build:
+    name: Production Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ".node-version"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+        env:
+          SKIP_RECIPE_SYNC: "true"
+          TRMNL_REGISTRY_OFFLINE: "true"
+      # Generated files must be committed; a build that changes them means
+      # someone forgot `pnpm generate:sql` / `pnpm generate:recipes`.
+      - run: git diff --exit-code -- lib/database/sql-statements.ts lib/recipes/screens.generated.ts

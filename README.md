@@ -80,6 +80,9 @@
    docker-compose up -d
    # visit http://localhost:3000
    ```
+   Compose applies database migrations at startup (`AUTO_MIGRATE=true`) and
+   publishes Postgres on `127.0.0.1:5432` only. The image has a Docker
+   `HEALTHCHECK` on `GET /api/health`.
 
 #### Browser-based renderer (optional)
 For pixel-perfect TRMNL Framework UI compatibility, run the browser renderer alongside a headless Chrome container:
@@ -100,9 +103,13 @@ Start the dev server:
 pnpm dev
 ```
 
-Format/lint:
+Checks:
 ```bash
-pnpm lint
+pnpm lint        # Biome
+pnpm typecheck   # tsc --noEmit
+pnpm test        # unit tests
+# Integration tests against a throwaway Postgres (the suites drop the schema):
+TEST_DATABASE_URL=postgres://postgres:pw@127.0.0.1:5432/byos_test?sslmode=disable pnpm test:db
 ```
 
 ## Environment
@@ -117,6 +124,14 @@ Create `.env.local` (for `pnpm dev`) or `.env` (for Docker Compose) with the key
 | `AUTH_ENABLED` | Set to `false` to disable authentication (mono-user mode). |
 | `REACT_RENDERER` | `takumi` (default), `satori`, or `browser`. See below. |
 | `ENABLE_EXTERNAL_CATALOG` | Allow fetching the community / TRMNL recipe catalog. |
+| `AUTO_MIGRATE` | `true` applies pending migrations at startup (set by `docker-compose.yml`). |
+| `FIRMWARE_UPDATES` | `auto` (default) offers official firmware updates to devices; `off` for DIY kits and boards running other builds. |
+| `LOG_DB_LEVEL` | Minimum level stored in `system_logs`: `debug`, `info` (default), `warn`, `error` or `off`. |
+| `LOG_RETENTION_DAYS` | Delete system and device logs older than this many days (`0`, the default, keeps them). |
+
+Configuration problems (for example a missing `BETTER_AUTH_SECRET` with authentication enabled)
+are reported in the server log at startup. `GET /api/health` reports liveness and database state;
+add `?require=database` for a readiness probe that fails while the database is unavailable.
 
 When authentication is enabled, visit `/setup` after configuring the database.
 The first account created during setup is assigned the admin role automatically.
@@ -127,7 +142,7 @@ The first account created during setup is assigned the admin role automatically.
 - **`browser`**: headless Chrome via `puppeteer-core`, required for full TRMNL Framework UI components and pixel-perfect parity with the official cloud. Use the `docker-compose.browser.yml` overlay or set `BROWSER_URL` to a reachable Chrome DevTools endpoint.
 
 ### Database Options
-- **Supabase or Neon:** run migrations in `migrations/` in order, or use the in-app Initialize button on first launch. **Note:** migration `0009_add_user_tenancy.sql` assumes a `postgres` superuser role. On managed providers where the connection role differs, edit `GRANT byos_app TO <your_role>` before running it (see [#46](https://github.com/usetrmnl/byos_next/issues/46)).
+- **Supabase or Neon:** set `AUTO_MIGRATE=true`, or use the in-app Initialize button on first launch. Migrations are tracked in `schema_migrations`, verified by checksum, and serialized with an advisory lock. **Note:** migration `0009_add_user_tenancy.sql` assumes a `postgres` superuser role. On managed providers where the connection role differs, edit `GRANT byos_app TO <your_role>` before running it (see [#46](https://github.com/usetrmnl/byos_next/issues/46)).
 - **Docker/Postgres:** set `POSTGRES_PASSWORD` and `BETTER_AUTH_SECRET` in `.env`, then run `docker-compose up -d`.
 - **No-DB mode:** run `pnpm dev` without DB env vars to preview screens only (device management disabled).
 
@@ -156,7 +171,8 @@ See `docs/recipes.md` for the full pattern, including data fetching.
 
 ## Documentation
 - API endpoints and payloads: `docs/api.md`
-- Recipes reference: `app/recipes/README.md`
+- Recipes reference: `docs/recipes.md`
+- Agent/contributor notes: `AGENTS.md`; audit progress: `docs/audit/PROGRESS.md`
 - Contributing guide: `CONTRIBUTING.md`
 
 ## Roadmap
