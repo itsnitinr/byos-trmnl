@@ -1,6 +1,7 @@
 /**
  * Next.js boot hook. Runs ONCE per server process — not per request.
  *
+ * - Reports configuration problems (missing secrets, unknown option values).
  * - Optionally applies pending migrations (`AUTO_MIGRATE=true`), so container
  *   deployments come up ready without visiting the setup screen.
  * - Starts hourly maintenance (log retention, stale device claims).
@@ -13,6 +14,9 @@
 export async function register() {
 	if (process.env.NEXT_RUNTIME !== "nodejs") return;
 	if (process.env.NEXT_PHASE === "phase-production-build") return;
+
+	const { reportRuntimeConfig } = await import("./lib/config");
+	reportRuntimeConfig();
 
 	if (process.env.AUTO_MIGRATE === "true" && process.env.DATABASE_URL) {
 		try {

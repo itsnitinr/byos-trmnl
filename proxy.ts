@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/auth";
 import { isMachineAuthenticatedRoute } from "@/lib/auth/machine-routes";
@@ -8,6 +7,7 @@ const PUBLIC_API_PATHS = [
 	"/api/bitmap",
 	"/api/categories",
 	"/api/display",
+	"/api/health",
 	"/api/ips",
 	"/api/log",
 	"/api/models",
@@ -57,11 +57,13 @@ export async function proxy(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	const session = await auth.api.getSession({
-		headers: await headers(),
-	});
+	const session = await auth.api.getSession({ headers: request.headers });
 
 	if (!session) {
+		// API clients need a status code, not an HTML sign-in page.
+		if (pathname.startsWith("/api/")) {
+			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		}
 		return NextResponse.redirect(new URL("/sign-in", request.url));
 	}
 
