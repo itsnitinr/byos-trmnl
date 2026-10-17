@@ -19,6 +19,10 @@ const GITHUB_HEADERS = {
 // 6 hours, matching the firmware checker.
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 const REVALIDATE_SECONDS = 21600;
+// After a failure (offline, rate-limited), wait before asking GitHub again;
+// the check runs on every dashboard load.
+const RETRY_AFTER_FAILURE = 15 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 5000;
 
 export interface ServerRelease {
 	version: string; // e.g. "0.2.13"
@@ -31,6 +35,8 @@ export interface ServerRelease {
 
 let cachedRelease: ServerRelease | null = null;
 let cacheTime = 0;
+let retryAfter = 0;
+let pending: Promise<ServerRelease | null> | undefined;
 
 function normalizeVersion(tag: string): string {
 	return tag.replace(/^v/i, "").trim();
@@ -43,6 +49,7 @@ function normalizeVersion(tag: string): string {
 async function fetchLatestRelease(): Promise<ServerRelease | null> {
 	const response = await fetch(LATEST_RELEASE_URL, {
 		headers: GITHUB_HEADERS,
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		next: { revalidate: REVALIDATE_SECONDS },
 	});
 
@@ -69,6 +76,7 @@ async function fetchLatestRelease(): Promise<ServerRelease | null> {
 async function fetchLatestTag(): Promise<ServerRelease | null> {
 	const response = await fetch(TAGS_URL, {
 		headers: GITHUB_HEADERS,
+		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		next: { revalidate: REVALIDATE_SECONDS },
 	});
 
@@ -99,7 +107,7 @@ async function fetchLatestTag(): Promise<ServerRelease | null> {
 /**
  * Get the latest available BYOS server release, cached for 6 hours.
  * Returns the last good value (or null) when GitHub is unreachable so the UI
- * never throws.
+ * never throws. Concurrent callers share one lookup, and failures back off.
  */
 export async function getLatestServerRelease(): Promise<ServerRelease | null> {
 	const now = Date.now();
@@ -107,24 +115,36 @@ export async function getLatestServerRelease(): Promise<ServerRelease | null> {
 	if (cachedRelease && now - cacheTime < CACHE_TTL) {
 		return cachedRelease;
 	}
+	if (now < retryAfter) return cachedRelease;
 
-	try {
-		const release = (await fetchLatestRelease()) ?? (await fetchLatestTag());
-
-		if (release) {
-			cachedRelease = release;
-			cacheTime = now;
+	pending ??= (async () => {
+		try {
+			const release = (await fetchLatestRelease()) ?? (await fetchLatestTag());
+			if (release) {
+				cachedRelease = release;
+				cacheTime = Date.now();
+			} else {
+				retryAfter = Date.now() + RETRY_AFTER_FAILURE;
+			}
+			return release ?? cachedRelease;
+		} catch (error) {
+			retryAfter = Date.now() + RETRY_AFTER_FAILURE;
+			console.warn(
+				"Could not check for BYOS releases:",
+				error instanceof Error ? error.message : error,
+			);
+			return cachedRelease; // serve stale cache if we have one
+		} finally {
+			pending = undefined;
 		}
-
-		return release ?? cachedRelease;
-	} catch (error) {
-		console.error("Error fetching latest BYOS release:", error);
-		return cachedRelease; // serve stale cache if we have one
-	}
+	})();
+	return pending;
 }
 
 /** Clear the cache (useful for testing). */
 export function clearServerReleaseCache(): void {
 	cachedRelease = null;
 	cacheTime = 0;
+	retryAfter = 0;
+	pending = undefined;
 }
