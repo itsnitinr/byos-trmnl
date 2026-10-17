@@ -3,8 +3,10 @@
  *
  * Strategy:
  *  - Bundled JSON snapshot under `data/trmnl/<resource>.json` ships with the repo.
- *  - First hit serves the bundled snapshot and schedules an upstream refresh that best-effort
- *    persists to disk so future cold starts have fresher data.
+ *  - First hit serves the newest snapshot available (refreshed copy in the cache
+ *    directory, else the bundled one) and schedules an upstream refresh. Refreshed
+ *    data is persisted to the cache directory — `TRMNL_REGISTRY_CACHE_DIR`, default
+ *    `.next/cache/trmnl` — never into the source tree.
  *  - 24h TTL: stale entries are served while metadata refreshes after the response.
  *  - On upstream failure we fall back to whatever snapshot we have (in-memory or
  *    on-disk), so the endpoints keep working offline.
@@ -20,6 +22,12 @@ import { createSnapshotCache } from "@/lib/cache/snapshot-cache";
 
 const TRMNL_API_BASE = "https://usetrmnl.com";
 const DATA_DIR = path.join(process.cwd(), "data", "trmnl");
+function cacheDir(): string {
+	return (
+		process.env.TRMNL_REGISTRY_CACHE_DIR ||
+		path.join(process.cwd(), ".next", "cache", "trmnl")
+	);
+}
 const TTL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -100,16 +108,21 @@ export function isProxyLive(): boolean {
 	return process.env.TRMNL_PROXY_LIVE === "true";
 }
 
-async function readSnapshot(
-	resource: RegistryResource,
-): Promise<unknown | null> {
+async function readJson(file: string): Promise<unknown | null> {
 	try {
-		const file = path.join(DATA_DIR, `${resource}.json`);
-		const raw = await fs.readFile(file, "utf8");
-		return JSON.parse(raw);
+		return JSON.parse(await fs.readFile(file, "utf8"));
 	} catch {
 		return null;
 	}
+}
+
+async function readSnapshot(
+	resource: RegistryResource,
+): Promise<unknown | null> {
+	return (
+		(await readJson(path.join(cacheDir(), `${resource}.json`))) ??
+		readJson(path.join(DATA_DIR, `${resource}.json`))
+	);
 }
 
 async function writeSnapshot(
@@ -117,9 +130,13 @@ async function writeSnapshot(
 	data: unknown,
 ): Promise<void> {
 	try {
-		await fs.mkdir(DATA_DIR, { recursive: true });
-		const file = path.join(DATA_DIR, `${resource}.json`);
-		await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+		const dir = cacheDir();
+		await fs.mkdir(dir, { recursive: true });
+		// Write-then-rename so a crash never leaves a truncated snapshot behind.
+		const file = path.join(dir, `${resource}.json`);
+		const temporary = `${file}.${process.pid}.tmp`;
+		await fs.writeFile(temporary, JSON.stringify(data), "utf8");
+		await fs.rename(temporary, file);
 	} catch {
 		// Best-effort: serverless filesystems are often read-only. The in-memory
 		// cache still serves subsequent requests in the same instance.
