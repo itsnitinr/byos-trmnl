@@ -1,4 +1,4 @@
-import { sql } from "kysely";
+import { type RawBuilder, sql } from "kysely";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import { db } from "./db";
 
@@ -6,19 +6,80 @@ import { db } from "./db";
  * The role used for application queries. This role must:
  * - Exist in the database (created by migration 0009)
  * - NOT have BYPASSRLS attribute
- * - Have SELECT, INSERT, UPDATE, DELETE on all tables
+ * - Have SELECT, INSERT, UPDATE, DELETE on all tenant tables
  */
 const APP_ROLE = "byos_app";
+
+/** Session variables read by the RLS policies. */
+type ScopeSettings = {
+	/** `app.current_user_id`: the tenant whose rows are visible. */
+	userId?: string;
+	/** `app.device_api_key`: exposes the single device row with this key. */
+	deviceApiKey?: string;
+	/** `app.capability_lookup_uuid`: exposes one plugin_settings row by UUID. */
+	capabilityUuid?: string;
+	/** `app.shared_recipe_seed`: allows writing shared (user_id IS NULL) recipes. */
+	sharedRecipeSeed?: boolean;
+};
+
+/**
+ * Switch to the app role and set every RLS variable in ONE round trip.
+ *
+ * All variables are always written, so a scope never inherits a value left on
+ * a pooled connection by an earlier scope whose cleanup failed.
+ * `local` scopes the settings to the current transaction.
+ */
+function enterScope(
+	settings: ScopeSettings,
+	local: boolean,
+): RawBuilder<unknown> {
+	const isLocal = sql.raw(local ? "true" : "false");
+	return sql`SELECT
+		set_config('role', ${APP_ROLE}, ${isLocal}),
+		set_config('app.current_user_id', ${settings.userId ?? ""}, ${isLocal}),
+		set_config('app.device_api_key', ${settings.deviceApiKey ?? ""}, ${isLocal}),
+		set_config('app.capability_lookup_uuid', ${settings.capabilityUuid ?? ""}, ${isLocal}),
+		set_config('app.shared_recipe_seed', ${settings.sharedRecipeSeed ? "on" : ""}, ${isLocal})`;
+}
+
+/** Clear the variables and restore the login role, also in one round trip. */
+const leaveScope = sql`SELECT
+	set_config('app.current_user_id', '', false),
+	set_config('app.device_api_key', '', false),
+	set_config('app.capability_lookup_uuid', '', false),
+	set_config('app.shared_recipe_seed', '', false),
+	set_config('role', 'none', false)`;
+
+/**
+ * Acquire a pooled connection, enter the scope, run the callback, then reset
+ * before releasing the connection. Without the reset, the variables would
+ * persist on the connection and a later unscoped query on that same pooled
+ * connection would inherit them.
+ */
+async function runScoped<T>(
+	settings: ScopeSettings,
+	callback: (scopedDb: typeof db) => Promise<T>,
+): Promise<T> {
+	return db.connection().execute(async (conn) => {
+		await enterScope(settings, false).execute(conn);
+		try {
+			return await callback(conn);
+		} finally {
+			try {
+				await leaveScope.execute(conn);
+			} catch {
+				// Connection already broken. Every scope re-sets all variables on
+				// entry, and the owner role is unaffected by them.
+			}
+		}
+	});
+}
 
 /**
  * Execute a database operation with user context for Row Level Security.
  *
- * This function:
- * 1. Gets the current user ID from the session
- * 2. Switches to a non-superuser role (byos_app) so RLS is enforced
- * 3. Sets the PostgreSQL session variable `app.current_user_id`
- * 4. Executes the callback with the scoped db connection
- * 5. RLS policies use this variable to filter data
+ * Gets the current user ID from the session, switches to the non-superuser
+ * role so RLS is enforced, and sets `app.current_user_id` for the policies.
  *
  * @example
  * ```ts
@@ -31,7 +92,7 @@ export async function withUserScope<T>(
 	callback: (scopedDb: typeof db) => Promise<T>,
 ): Promise<T> {
 	const userId = await getCurrentUserId();
-	return runScoped(userId ?? "", callback);
+	return runScoped({ userId: userId ?? "" }, callback);
 }
 
 /**
@@ -44,7 +105,7 @@ export async function withExplicitUserScope<T>(
 	userId: string,
 	callback: (scopedDb: typeof db) => Promise<T>,
 ): Promise<T> {
-	return runScoped(userId, callback);
+	return runScoped({ userId }, callback);
 }
 
 /**
@@ -61,24 +122,7 @@ export async function withCapabilityUuid<T>(
 	uuid: string,
 	callback: (scopedDb: typeof db) => Promise<T>,
 ): Promise<T> {
-	return db.connection().execute(async (conn) => {
-		await sql`SET ROLE ${sql.ref(APP_ROLE)}`.execute(conn);
-		await sql`SELECT set_config('app.capability_lookup_uuid', ${uuid}, false)`.execute(
-			conn,
-		);
-		try {
-			return await callback(conn);
-		} finally {
-			try {
-				await sql`SELECT set_config('app.capability_lookup_uuid', '', false)`.execute(
-					conn,
-				);
-				await sql`RESET ROLE`.execute(conn);
-			} catch {
-				// Connection already broken; the pool will discard it.
-			}
-		}
-	});
+	return runScoped({ capabilityUuid: uuid }, callback);
 }
 
 /**
@@ -92,24 +136,7 @@ export async function withDeviceApiKey<T>(
 	apiKey: string,
 	callback: (scopedDb: typeof db) => Promise<T>,
 ): Promise<T> {
-	return db.connection().execute(async (conn) => {
-		await sql`SET ROLE ${sql.ref(APP_ROLE)}`.execute(conn);
-		await sql`SELECT set_config('app.device_api_key', ${apiKey}, false)`.execute(
-			conn,
-		);
-		try {
-			return await callback(conn);
-		} finally {
-			try {
-				await sql`SELECT set_config('app.device_api_key', '', false)`.execute(
-					conn,
-				);
-				await sql`RESET ROLE`.execute(conn);
-			} catch {
-				// Connection already broken; the pool will discard it.
-			}
-		}
-	});
+	return runScoped({ deviceApiKey: apiKey }, callback);
 }
 
 /**
@@ -121,62 +148,14 @@ export async function withDeviceApiKey<T>(
 export async function withSharedRecipeSeed<T>(
 	callback: (scopedDb: typeof db) => Promise<T>,
 ): Promise<T> {
-	return db.connection().execute(async (conn) => {
-		await sql`SET ROLE ${sql.ref(APP_ROLE)}`.execute(conn);
-		await sql`SELECT set_config('app.shared_recipe_seed', 'on', false)`.execute(
-			conn,
-		);
-		try {
-			return await callback(conn);
-		} finally {
-			try {
-				await sql`SELECT set_config('app.shared_recipe_seed', '', false)`.execute(
-					conn,
-				);
-				await sql`RESET ROLE`.execute(conn);
-			} catch {
-				// Connection already broken; the pool will discard it.
-			}
-		}
-	});
-}
-
-/**
- * Acquire a pooled connection, switch role + set RLS user, run the callback,
- * then reset both settings before releasing the connection back to the pool.
- * Without the reset, `app.current_user_id` would persist on the connection and
- * any later unscoped query on that same pooled connection would inherit it.
- */
-async function runScoped<T>(
-	userId: string,
-	callback: (scopedDb: typeof db) => Promise<T>,
-): Promise<T> {
-	return db.connection().execute(async (conn) => {
-		await sql`SET ROLE ${sql.ref(APP_ROLE)}`.execute(conn);
-		await sql`SELECT set_config('app.current_user_id', ${userId}, false)`.execute(
-			conn,
-		);
-		try {
-			return await callback(conn);
-		} finally {
-			// Best-effort cleanup: clear the RLS user and restore the default role
-			// so the next checkout of this connection starts clean.
-			try {
-				await sql`SELECT set_config('app.current_user_id', '', false)`.execute(
-					conn,
-				);
-				await sql`RESET ROLE`.execute(conn);
-			} catch {
-				// If reset fails (connection already broken), the pool will discard it.
-			}
-		}
-	});
+	return runScoped({ sharedRecipeSeed: true }, callback);
 }
 
 /**
  * Execute a database transaction with user context for Row Level Security.
  *
- * Same as withUserScope but wraps everything in a transaction.
+ * Same as withUserScope but wraps everything in a transaction. The role and
+ * variables are transaction-local, so COMMIT/ROLLBACK resets them.
  *
  * @example
  * ```ts
@@ -190,27 +169,8 @@ export async function withUserScopeTransaction<T>(
 	callback: (trx: typeof db) => Promise<T>,
 ): Promise<T> {
 	const userId = await getCurrentUserId();
-
-	return db.connection().execute(async (conn) => {
-		await sql`SET ROLE ${sql.ref(APP_ROLE)}`.execute(conn);
-		try {
-			return await conn.transaction().execute(async (trx) => {
-				// Set the user context for RLS within the transaction.
-				// is_local=true clears the setting automatically at transaction end.
-				await sql`SELECT set_config('app.current_user_id', ${userId ?? ""}, true)`.execute(
-					trx,
-				);
-
-				return await callback(trx);
-			});
-		} finally {
-			// SET ROLE is session-level, so reset it before releasing the pooled
-			// connection even when the transaction commits successfully.
-			try {
-				await sql`RESET ROLE`.execute(conn);
-			} catch {
-				// If reset fails (connection already broken), the pool will discard it.
-			}
-		}
+	return db.transaction().execute(async (trx) => {
+		await enterScope({ userId: userId ?? "" }, true).execute(trx);
+		return callback(trx);
 	});
 }

@@ -16,12 +16,15 @@ const config: Config = {
 	moduleNameMapper: {
 		"^@/(.*)$": "<rootDir>/$1",
 	},
+	// Kysely ships ESM only; compile it to CommonJS like the TypeScript sources.
+	transformIgnorePatterns: ["/node_modules/(?!\\.pnpm/kysely@)(?!kysely/)"],
 	transform: {
-		"^.+\\.tsx?$": [
+		"^.+\\.(tsx?|js)$": [
 			"ts-jest",
 			{
 				tsconfig: {
 					rootDir: ".",
+					allowJs: true,
 					moduleResolution: "node16",
 					module: "node16",
 				},
