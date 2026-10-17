@@ -25,13 +25,24 @@ export type PreparedDeviceImage = {
 	dataUrl: string;
 };
 
-function parseDataUrl(src: string): Buffer | null {
-	const match = src.match(/^data:([^;,]+)?(;base64)?,(.*)$/);
-	if (!match) return null;
-	const [, , base64Flag, payload = ""] = match;
-	return base64Flag
-		? Buffer.from(payload, "base64")
-		: Buffer.from(decodeURIComponent(payload));
+/**
+ * Decode a `data:` URL (RFC 2397): `data:[<mediatype>][;param=value]*[;base64],<data>`.
+ * Parameters such as `;utf8` or `;charset=utf-8` are common in inline SVG.
+ */
+export function parseDataUrl(src: string): Buffer | null {
+	if (!src.startsWith("data:")) return null;
+	const comma = src.indexOf(",");
+	if (comma < 0) return null;
+	const params = src.slice(5, comma).split(";");
+	const payload = src.slice(comma + 1);
+	if (params.at(-1)?.trim().toLowerCase() === "base64") {
+		return Buffer.from(payload, "base64");
+	}
+	try {
+		return Buffer.from(decodeURIComponent(payload));
+	} catch {
+		return Buffer.from(payload);
+	}
 }
 
 async function loadImageSource(
