@@ -1,4 +1,5 @@
 import { db } from "@/lib/database/db";
+import { mapPlaylistItemRow } from "@/lib/database/mappers";
 import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import {
 	DISPLAY_FALLBACK_REFRESH_SECONDS,
@@ -53,19 +54,6 @@ export type DisplayVisit = {
 };
 
 type Conn = typeof db;
-
-function mapPlaylistItemRow(row: Record<string, unknown>): PlaylistItem {
-	const daysOfWeek =
-		typeof row.days_of_week === "string"
-			? JSON.parse(row.days_of_week)
-			: row.days_of_week;
-	return {
-		...(row as unknown as PlaylistItem),
-		duration: Number(row.duration),
-		order_index: Number(row.order_index),
-		days_of_week: Array.isArray(daysOfWeek) ? daysOfWeek : null,
-	};
-}
 
 async function activePlaylistItem(
 	conn: Conn,

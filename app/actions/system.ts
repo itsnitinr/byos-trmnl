@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/get-user";
 import { db } from "@/lib/database/db";
 import type { DB } from "@/lib/database/db.d";
 import { containsPattern } from "@/lib/database/like";
+import { mapSystemLogRow } from "@/lib/database/mappers";
 import { checkDbConnection } from "@/lib/database/utils";
 import type { SystemLog } from "@/lib/types";
 
@@ -100,7 +101,7 @@ async function querySystemLogs(
 	]);
 
 	return {
-		logs: logs as unknown as SystemLog[],
+		logs: logs.map(mapSystemLogRow),
 		total: Number(count?.count || 0),
 		uniqueSources: sources
 			.map((item) => item.source)

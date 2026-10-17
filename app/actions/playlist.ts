@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUserId } from "@/lib/auth/get-user";
+import { mapPlaylistItemRow, mapPlaylistRow } from "@/lib/database/mappers";
 import {
 	withUserScope,
 	withUserScopeTransaction,
@@ -76,7 +77,7 @@ export async function fetchPlaylists(): Promise<Playlist[]> {
 			.execute(),
 	);
 
-	return playlists as unknown as Playlist[];
+	return playlists.map(mapPlaylistRow);
 }
 
 /**
@@ -117,8 +118,8 @@ export async function fetchPlaylistWithItems(playlistId: string): Promise<{
 	}
 
 	return {
-		playlist: playlist as unknown as Playlist,
-		items: items as unknown as PlaylistItem[],
+		playlist: mapPlaylistRow(playlist),
+		items: items.map(mapPlaylistItemRow),
 	};
 }
 

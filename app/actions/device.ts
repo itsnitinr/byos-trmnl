@@ -5,7 +5,7 @@ import { BYOS_MONO_USER_ID, getCurrentUserId } from "@/lib/auth/get-user";
 import { db } from "@/lib/database/db";
 import type { DB } from "@/lib/database/db.d";
 import { containsPattern } from "@/lib/database/like";
-import { mapDeviceRow } from "@/lib/database/mappers";
+import { mapDeviceRow, mapLogRow } from "@/lib/database/mappers";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import {
@@ -152,7 +152,7 @@ export async function fetchDeviceLogsWithFilters({
 			.executeTakeFirst(),
 	]);
 
-	const logsData = logs as unknown as Log[];
+	const logsData = logs.map(mapLogRow);
 	return {
 		logs: logsData,
 		total: Number(countResult?.count || 0),

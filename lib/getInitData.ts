@@ -1,6 +1,12 @@
 import { cache } from "react";
 import { canReadSystemLogs } from "@/app/actions/system";
-import { mapDeviceRows } from "@/lib/database/mappers";
+import {
+	mapDeviceRows,
+	mapMixupRow,
+	mapPlaylistItemRow,
+	mapPlaylistRow,
+	mapSystemLogRow,
+} from "@/lib/database/mappers";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { getDbStatus } from "@/lib/database/utils";
 import type {
@@ -93,10 +99,10 @@ export const getInitData = cache(async (): Promise<InitialData> => {
 			);
 
 			devices = mapDeviceRows(devicesResult);
-			playlists = playlistsResult as unknown as Playlist[];
-			playlistItems = playlistItemsResult as unknown as PlaylistItem[];
-			mixups = mixupsResult as unknown as Mixup[];
-			systemLogs = logsResult as unknown as SystemLog[];
+			playlists = playlistsResult.map(mapPlaylistRow);
+			playlistItems = playlistItemsResult.map(mapPlaylistItemRow);
+			mixups = mixupsResult.map(mapMixupRow);
+			systemLogs = logsResult.map(mapSystemLogRow);
 		} catch (error) {
 			console.error("Error fetching initial data:", error);
 		}

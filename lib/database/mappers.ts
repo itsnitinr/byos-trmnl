@@ -3,7 +3,16 @@ import {
 	normalizeRefreshSchedule,
 } from "@/lib/device/defaults";
 import { DeviceDisplayMode } from "@/lib/mixup/constants";
-import type { Device, TemperatureProfile } from "@/lib/types";
+import type {
+	Device,
+	Log,
+	Mixup,
+	MixupSlot,
+	Playlist,
+	PlaylistItem,
+	SystemLog,
+	TemperatureProfile,
+} from "@/lib/types";
 
 type DeviceRow = Record<string, unknown>;
 
@@ -128,5 +137,95 @@ export function mapTrmnlDeviceSummary(
 		sleep_mode_enabled: device.sleep_mode_enabled,
 		sleep_start_time: device.sleep_start_time,
 		sleep_end_time: device.sleep_end_time,
+	};
+}
+
+type Row = Record<string, unknown>;
+
+function jsonArray(value: unknown): unknown[] | null {
+	const parsed =
+		typeof value === "string"
+			? (() => {
+					try {
+						return JSON.parse(value);
+					} catch {
+						return null;
+					}
+				})()
+			: value;
+	return Array.isArray(parsed) ? parsed : null;
+}
+
+/*
+ * Kysely returns timestamptz as Date, bigint as string and jsonb parsed; the
+ * app types use ISO strings and numbers. These mappers make the runtime
+ * values match the types instead of casting over the difference.
+ */
+
+export function mapPlaylistRow(row: Row): Playlist {
+	return {
+		id: stringValue(row.id),
+		name: stringValue(row.name),
+		created_at: nullableTimestamp(row.created_at),
+		updated_at: nullableTimestamp(row.updated_at),
+	};
+}
+
+export function mapPlaylistItemRow(row: Row): PlaylistItem {
+	const days = jsonArray(row.days_of_week);
+	return {
+		id: stringValue(row.id),
+		playlist_id: nullableString(row.playlist_id),
+		screen_id: stringValue(row.screen_id),
+		duration: nullableNumber(row.duration) ?? 0,
+		start_time: nullableString(row.start_time),
+		end_time: nullableString(row.end_time),
+		days_of_week: days
+			? days.filter((day): day is string => typeof day === "string")
+			: null,
+		order_index: nullableNumber(row.order_index) ?? 0,
+		created_at: nullableTimestamp(row.created_at),
+	};
+}
+
+export function mapMixupRow(row: Row): Mixup {
+	return {
+		id: stringValue(row.id),
+		name: stringValue(row.name),
+		layout_id: stringValue(row.layout_id),
+		created_at: nullableTimestamp(row.created_at),
+		updated_at: nullableTimestamp(row.updated_at),
+	};
+}
+
+export function mapMixupSlotRow(row: Row): MixupSlot {
+	return {
+		id: stringValue(row.id),
+		mixup_id: nullableString(row.mixup_id),
+		slot_id: stringValue(row.slot_id),
+		recipe_id: nullableString(row.recipe_id),
+		order_index: nullableNumber(row.order_index) ?? 0,
+		created_at: nullableTimestamp(row.created_at),
+	};
+}
+
+export function mapSystemLogRow(row: Row): SystemLog {
+	return {
+		id: stringValue(row.id),
+		created_at: nullableTimestamp(row.created_at),
+		level: stringValue(row.level),
+		message: stringValue(row.message),
+		source: nullableString(row.source),
+		metadata: nullableString(row.metadata),
+		trace: nullableString(row.trace),
+	};
+}
+
+export function mapLogRow(row: Row): Log {
+	return {
+		id: nullableNumber(row.id) ?? 0,
+		friendly_id: nullableString(row.friendly_id),
+		log_data: stringValue(row.log_data),
+		created_at: nullableTimestamp(row.created_at),
 	};
 }
