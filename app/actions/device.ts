@@ -15,6 +15,7 @@ import {
 import {
 	hashClaimCode,
 	normalizeClaimCode,
+	pendingClaimCutoff,
 } from "@/lib/device/pending-device-claims";
 import type { Device, Log } from "@/lib/types";
 import { generateFriendlyId, generateMockMacAddress } from "@/utils/helpers";
@@ -428,6 +429,7 @@ export async function claimDeviceByCode(input: {
 			const pendingClaim = await trx
 				.deleteFrom("pending_device_claims")
 				.where("claim_hash", "=", claimHash)
+				.where("last_seen_at", ">", pendingClaimCutoff())
 				.returningAll()
 				.executeTakeFirst();
 

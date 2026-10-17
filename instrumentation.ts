@@ -3,7 +3,7 @@
  *
  * - Optionally applies pending migrations (`AUTO_MIGRATE=true`), so container
  *   deployments come up ready without visiting the setup screen.
- * - Starts background maintenance (log retention).
+ * - Starts hourly maintenance (log retention, stale device claims).
  * - Seeds the in-DB recipe catalog from the in-process React recipe registry.
  *   Built-in recipes are defined in code, but the DB still needs rows for
  *   foreign keys (mixup_slots, etc.) and for the mixup picker UI. The runtime
@@ -33,8 +33,8 @@ export async function register() {
 
 	const { checkDbConnection } = await import("./lib/database/utils");
 	await checkDbConnection();
-	const { startLogRetention } = await import("./lib/database/log-retention");
-	startLogRetention();
+	const { startMaintenance } = await import("./lib/database/maintenance");
+	startMaintenance();
 	if (process.env.SKIP_RECIPE_SYNC === "true") return;
 
 	try {
