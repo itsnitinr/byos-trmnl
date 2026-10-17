@@ -10,7 +10,7 @@ import {
 	resolveCachedData,
 } from "./data-cache";
 import { withRecipeDeadline } from "./fetch-context";
-import { defaultDataRefreshSeconds } from "./refresh-settings";
+import { DEFAULT_DATA_REFRESH_SECONDS } from "./refresh-settings";
 
 /**
  * React-recipe runtime: given a slug + (optional) userId, resolve the
@@ -113,7 +113,9 @@ export const resolveReactRecipe = cache(
 		if (definition.getData) {
 			const getData = definition.getData;
 			const refreshSeconds =
-				config.dataRefreshSeconds ?? defaultDataRefreshSeconds(slug);
+				config.dataRefreshSeconds ??
+				definition.meta.dataRefreshSeconds ??
+				DEFAULT_DATA_REFRESH_SECONDS;
 			const result = await resolveCachedData(
 				recipeDataKey(userId, slug, {
 					params,

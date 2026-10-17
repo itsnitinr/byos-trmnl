@@ -1,21 +1,12 @@
+import { getReactRecipeDefinition } from "@/lib/recipes/registry";
 import { loadRecipeConfig } from "./config";
 
-const DEFAULTS: Record<string, number> = {
-	weather: 900,
-	"air-quality": 900,
-	"bitcoin-price": 300,
-	"hacker-news": 300,
-	"local-news": 600,
-	wikipedia: 86400,
-	calendar: 300,
-	"github-contributions": 900,
-	"whos-overhead": 30,
-	"sunrise-sunset": 3600,
-	// 49 grid points per fetch; half-hourly keeps a device well inside Open-Meteo's free tier.
-	"wind-map": 1800,
-};
-export function defaultDataRefreshSeconds(slug: string): number {
-	return DEFAULTS[slug] ?? 300;
+export const DEFAULT_DATA_REFRESH_SECONDS = 300;
+
+/** The recipe's declared data lifetime (`meta.dataRefreshSeconds`), else 300 s. */
+export async function defaultDataRefreshSeconds(slug: string): Promise<number> {
+	const definition = await getReactRecipeDefinition(slug);
+	return definition?.meta.dataRefreshSeconds ?? DEFAULT_DATA_REFRESH_SECONDS;
 }
 
 export async function loadRecipeRefreshSettings(
@@ -23,7 +14,7 @@ export async function loadRecipeRefreshSettings(
 	userId?: string | null,
 ): Promise<{ seconds: number; editable: boolean }> {
 	const fallback = {
-		seconds: defaultDataRefreshSeconds(slug),
+		seconds: await defaultDataRefreshSeconds(slug),
 		editable: false,
 	};
 	if (!userId) return fallback;

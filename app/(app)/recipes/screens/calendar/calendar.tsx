@@ -469,6 +469,7 @@ export const definition: RecipeDefinition<
 		author: { name: "mikkel-bergmann", github: "mikkel-bergmann" },
 		category: "display-components",
 		version: "0.1.0",
+		dataRefreshSeconds: 300,
 		createdAt: "2026-06-14T00:00:00Z",
 		updatedAt: "2026-06-14T00:00:00Z",
 		renderSettings: {

@@ -313,6 +313,8 @@ export const definition: RecipeDefinition<
 		category: "environment",
 		tags: ["weather", "wind", "map", "live", "location"],
 		version: "1.0.0",
+		// 49 grid points per fetch; half-hourly keeps a device well inside Open-Meteo's free tier.
+		dataRefreshSeconds: 1800,
 		renderSettings: {
 			imageDither: false,
 		},

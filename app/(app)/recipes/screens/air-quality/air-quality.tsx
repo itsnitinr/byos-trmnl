@@ -658,6 +658,7 @@ export const definition: RecipeDefinition<
 		author: { name: "Nitin Ranganath", github: "itsnitinr" },
 		category: "display-components",
 		version: "0.2.0",
+		dataRefreshSeconds: 900,
 		createdAt: "2026-09-02T00:00:00Z",
 		updatedAt: "2026-09-07T00:00:00Z",
 		renderSettings: {

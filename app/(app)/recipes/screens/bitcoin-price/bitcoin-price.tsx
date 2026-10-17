@@ -303,6 +303,7 @@ export const definition: RecipeDefinition<
 		author: { name: "Mangle Kuo", github: "ghcpuman902" },
 		category: "display-components",
 		version: "0.2.0",
+		dataRefreshSeconds: 300,
 		createdAt: "2025-03-01T00:00:00Z",
 		updatedAt: "2025-03-01T00:00:00Z",
 	},
