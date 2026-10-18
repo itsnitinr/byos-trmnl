@@ -3,6 +3,7 @@
  */
 
 const TRMNL_API_BASE = "https://usetrmnl.com";
+const PROXY_TIMEOUT_MS = 15_000;
 
 export interface ProxyOptions {
 	/**
@@ -55,6 +56,7 @@ export async function proxyToTRMNL(
 	const fetchOptions: RequestInit = {
 		method,
 		headers,
+		signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
 	};
 
 	// Add body for POST/PATCH/PUT requests
@@ -67,12 +69,12 @@ export async function proxyToTRMNL(
 
 	try {
 		const response = await fetch(url, fetchOptions);
-		const data = await response.json();
-
-		return new Response(JSON.stringify(data), {
+		// Pass the upstream body through; error pages are often HTML, not JSON.
+		return new Response(await response.text(), {
 			status: response.status,
 			headers: {
-				"Content-Type": "application/json",
+				"Content-Type":
+					response.headers.get("content-type") ?? "application/json",
 			},
 		});
 	} catch (error) {
