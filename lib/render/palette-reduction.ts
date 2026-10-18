@@ -111,6 +111,18 @@ export function snapRgbToPalette(
 ): Uint8Array {
 	const nearest = createPaletteMapper(paletteColors);
 	const output = new Uint8Array(data.length);
+	if (isGrayPalette(paletteColors) && isGrayImage(data)) {
+		// Same choices as the per-pixel mapper, read from a 256-entry table.
+		const lut = new Uint8Array(256);
+		for (let v = 0; v < 256; v++) lut[v] = nearest(v, v, v) & 255;
+		for (let index = 0; index < data.length; index += 3) {
+			const value = lut[data[index]];
+			output[index] = value;
+			output[index + 1] = value;
+			output[index + 2] = value;
+		}
+		return output;
+	}
 	for (let index = 0; index < data.length; index += 3) {
 		const color = nearest(data[index], data[index + 1], data[index + 2]);
 		output[index] = (color >>> 16) & 255;

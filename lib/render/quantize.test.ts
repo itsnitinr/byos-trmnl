@@ -161,3 +161,22 @@ test("handles single-row and single-column frames", () => {
 		);
 	}
 });
+
+test("the gray snap fast path matches per-pixel nearest-colour snapping", () => {
+	const gray = randomImage(61, 37, 1, 6);
+	const rgb = new Uint8Array(gray.length * 3);
+	for (let i = 0; i < gray.length; i++)
+		rgb[i * 3] = rgb[i * 3 + 1] = rgb[i * 3 + 2] = gray[i];
+	// One colored pixel forces the general path for comparison.
+	const mixed = Uint8Array.from(rgb);
+	mixed[0] = 255;
+	mixed[1] = 0;
+	for (const grays of Object.values(palettes)) {
+		const palette = grays.map((v) => ({ r: v, g: v, b: v }));
+		const fast = reduceRgbToPalette(rgb, 61, 37, palette, "snap");
+		const general = reduceRgbToPalette(mixed, 61, 37, palette, "snap");
+		expect(Buffer.from(fast.subarray(3))).toEqual(
+			Buffer.from(general.subarray(3)),
+		);
+	}
+});
