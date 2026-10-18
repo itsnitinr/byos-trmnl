@@ -65,3 +65,40 @@ test("rejects physically impossible budgets instead of sending an invalid payloa
 		}),
 	).rejects.toBeInstanceOf(ImageBudgetError);
 });
+
+test("1-bit black-and-white output is grayscale with black as 0, as every TRMNL firmware expects", async () => {
+	// Left half black, right half white.
+	const png = await sharp({
+		create: { width: 400, height: 240, channels: 3, background: "white" },
+	})
+		.composite([
+			{
+				input: {
+					create: {
+						width: 200,
+						height: 240,
+						channels: 3,
+						background: "black",
+					},
+				},
+				left: 0,
+				top: 0,
+			},
+		])
+		.png()
+		.toBuffer();
+	const image = await renderDeviceImage({
+		png,
+		profile: {
+			model: { ...model, colors: 2, bit_depth: 1, image_size_limit: undefined },
+			palette: { id: "bw", name: "Black and white", grays: 2 },
+		},
+	});
+	expect(image.buffer[24]).toBe(1); // bit depth
+	expect(image.buffer[25]).toBe(0); // grayscale, not a palette
+	const { data, info } = await sharp(image.buffer)
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+	expect(data[0]).toBe(0); // top-left: black
+	expect(data[399 * info.channels]).toBe(255); // top-right: white
+});
