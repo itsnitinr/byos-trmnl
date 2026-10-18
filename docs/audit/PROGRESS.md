@@ -160,6 +160,12 @@ Checked against the firmware source (usetrmnl/trmnl-firmware: `src/display_sessi
   `cb12de6`)
 - [ ] Not changed (would alter pixels): `supersample: true` renders 2× (3744×2808 on the X, ~500 ms
   raster) for simple-text and wikipedia; capping it for large panels is an option.
+- [x] **1-bit images showed inverted on firmware ≤ 1.8.16** (reported on a 7.5" OG DIY kit, 1.8.10,
+  which reports `Model: xiao_epaper_display`). Firmware `png_draw` checks a 2-entry palette's polarity
+  backwards before 1.8.17 and the other way after, so no palette order works on both; black-and-white
+  PNGs are now 1-bit grayscale, which every version draws as-is (also the X-class decoder).
+  Refresh policy (`display_show_image`): 1-bit (or 2-colour) PNG → partial refresh, full every 8th
+  update or with `maximum_compatibility`, "fast" when the interval is ≥ 30 min; 4-gray → always full.
 
 ## Decisions
 

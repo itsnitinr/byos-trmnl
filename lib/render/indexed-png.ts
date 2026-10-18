@@ -18,9 +18,18 @@ function chunk(type: string, data: Buffer): Buffer {
 	out.writeUInt32BE((crc ^ 0xffffffff) >>> 0, out.length - 4);
 	return out;
 }
+const BLACK = 0x000000;
+const WHITE = 0xffffff;
+
 /** Lossless PNG for pixels already reduced to an exact device palette.
  * https://www.w3.org/TR/png-3/ (indexed colour, packed scanlines, PLTE and CRC).
  * Returns null if a pixel is outside the palette, so callers can safely use a generic encoder.
+ *
+ * A black-and-white palette is written as 1-bit grayscale (0 = black, 1 = white)
+ * instead. TRMNL firmware up to 1.8.16 reads the polarity of a 2-entry palette
+ * backwards (`png_draw` in usetrmnl/trmnl-firmware src/display.cpp), so a
+ * [black, white] palette shows inverted on those devices, while the fixed
+ * firmware inverts [white, black]. Every version draws grayscale samples as-is.
  */
 export async function encodeIndexedPng(
 	rgb: Uint8Array,
@@ -58,6 +67,12 @@ export async function encodeIndexedPng(
 		plte.set(color, i * 3);
 		lookup.set((color[0] << 16) | (color[1] << 8) | color[2], i);
 	});
+	const blackAndWhite =
+		palette.length === 2 && lookup.has(BLACK) && lookup.has(WHITE);
+	if (blackAndWhite) {
+		lookup.set(BLACK, 0);
+		lookup.set(WHITE, 1);
+	}
 	const stride = 1 + Math.ceil((width * depth) / 8);
 	const scanlines = Buffer.alloc(stride * height); // Filter type 0; unused trailing bits stay zero.
 	let previousColor = -1,
@@ -80,11 +95,11 @@ export async function encodeIndexedPng(
 	header.writeUInt32BE(width, 0);
 	header.writeUInt32BE(height, 4);
 	header[8] = depth;
-	header[9] = 3;
+	header[9] = blackAndWhite ? 0 : 3; // grayscale : indexed colour
 	return Buffer.concat([
 		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
 		chunk("IHDR", header),
-		chunk("PLTE", plte),
+		...(blackAndWhite ? [] : [chunk("PLTE", plte)]),
 		chunk("IDAT", await compress(scanlines, { level })),
 		chunk("IEND", Buffer.alloc(0)),
 	]);
