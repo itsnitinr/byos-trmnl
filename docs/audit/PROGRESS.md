@@ -131,6 +131,36 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
 - [x] README links to a non-existent `app/recipes/README.md`.
 - [x] CI does not run a production build or database integration tests.
 
+### Core pass (firmware contract, rendering, battery) — 2026-10-18
+
+Checked against the firmware source (usetrmnl/trmnl-firmware: `src/display_session.cpp`,
+`src/bl.cpp`, `lib/trmnl/src/api-client/request_headers.cpp`, `platformio.ini`).
+
+- [x] **`status: 500` factory-resets the device** (`resetDeviceCredentials`: Wi-Fi + all
+  preferences erased). Unexpected exceptions and "device not found" sent it. Now transient failures
+  answer `status: 503` (keep screen), unknown devices get an error screen; the response module cannot
+  emit 500. (`bd66536`)
+- [x] **Every wake downloaded and redrew an identical image.** Firmware skips download when the
+  `filename` is cached in flash and skips the e-ink refresh when it is the image on screen; names were
+  random. `/api/display` now renders inline (8 s deadline) and names images `<label>-<sha256/14>.<ext>`
+  (≤ 31 chars). Verified: same name across wakes, matches the served bytes; image download 37 ms from
+  the shared render. `DISPLAY_FORCE_REFRESH=true` restores per-request names. (`bd66536`)
+- [x] **Next frame warmed before the wake** (one timer per device, data freshness margin), so data
+  fetches do not happen while the device waits with Wi-Fi on. (`b9d903a`)
+- [x] **Button (special functions) did nothing**: header is `special_function` and firmware needs an
+  echoed `action`. Parsed, echoed; `restart_playlist` restarts the playlist. (`cdb2885`)
+- [x] **Firmware offers went to every board**; `FW<version>.bin` is the OG build (`Model: og`). Other
+  boards (X, DIY kits) are no longer offered it. (`dfacef2`)
+- [x] **Firmware model names** (`og`, `x`, `og_4clr`, …) are mapped to registry families (X now gets
+  the `v2` profile automatically; an owner's choice within a family is kept); unknown-model warnings
+  logged once per device instead of every wake. (`63fc9a3`)
+- [x] **Dithering 3–6× faster, bit-identical** (rolling rows, no per-pixel allocation, scalar gray and
+  RGB loops, direct-mapped colour cache); gray snap via lookup table. 1872×1404 gray-16 dithered:
+  ~400 → ~70 ms (gray) / ~160 ms (tinted); 800×480: ~50 → ~11 ms. (`b479b3f`, `2c85fa2`, `ec8b004`,
+  `cb12de6`)
+- [ ] Not changed (would alter pixels): `supersample: true` renders 2× (3744×2808 on the X, ~500 ms
+  raster) for simple-text and wikipedia; capping it for large panels is an option.
+
 ## Decisions
 
 - Work in a separate worktree to keep the user's uncommitted `main` changes intact.
