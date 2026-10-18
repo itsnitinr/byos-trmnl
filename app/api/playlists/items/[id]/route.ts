@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import { logError, logInfo } from "@/lib/logger";
+import { readJsonBody } from "@/lib/network/response-bytes";
 
 /**
  * PATCH /api/playlists/items/{id}
@@ -31,7 +32,13 @@ export async function PATCH(
 	}
 
 	try {
-		const body = await request.json();
+		const body = await readJsonBody(request, 64 * 1024).catch(() => null);
+		if (!body || typeof body !== "object" || Array.isArray(body)) {
+			return NextResponse.json(
+				{ error: "Body must be a JSON object" },
+				{ status: 422 },
+			);
+		}
 		if ("visible" in body) {
 			return NextResponse.json(
 				{
