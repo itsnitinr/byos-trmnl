@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { BoundedCache, cacheKey } from "@/lib/cache/bounded-cache";
 import { measureRenderStage } from "@/lib/render/diagnostics";
 
@@ -7,6 +8,20 @@ const dataCache = new BoundedCache<Record<string, unknown>>(
 	256,
 );
 
+const freshnessMargin = new AsyncLocalStorage<number>();
+
+/**
+ * Run `work` treating cached data that expires within `marginMs` as already
+ * expired. Used when warming a device's next frame: data that would go stale
+ * before the device wakes is fetched now rather than while it waits.
+ */
+export function withFreshnessMargin<T>(
+	marginMs: number,
+	work: () => Promise<T>,
+): Promise<T> {
+	return freshnessMargin.run(Math.max(0, marginMs), work);
+}
+
 export async function resolveCachedData(
 	key: string,
 	fetchData: () => Promise<Record<string, unknown>>,
@@ -15,7 +30,7 @@ export async function resolveCachedData(
 	try {
 		const result = await dataCache.get(
 			key,
-			ttlMs,
+			Math.max(0, ttlMs - (freshnessMargin.getStore() ?? 0)),
 			() => measureRenderStage("fetch", fetchData),
 			(value) => Buffer.byteLength(JSON.stringify(value)),
 		);

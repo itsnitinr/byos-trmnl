@@ -16,6 +16,7 @@ import {
 } from "@/lib/display/responses";
 import { selectDisplayForDevice } from "@/lib/display/select";
 import { recordDisplayVisit } from "@/lib/display/visit";
+import { scheduleWarmup } from "@/lib/display/warmup";
 import {
 	canOfferGenericFirmware,
 	firmwareUpdatesEnabled,
@@ -25,11 +26,13 @@ import {
 } from "@/lib/firmware";
 import { logError, logInfo } from "@/lib/logger";
 import { DeviceDisplayMode } from "@/lib/mixup/constants";
+import { selectPlaylistItem } from "@/lib/playlists/schedule";
+import { withFreshnessMargin } from "@/lib/recipes/runtime/data-cache";
 import {
 	buildDeviceImageFilename,
 	buildDeviceImageUrl,
 } from "@/lib/render/device-image-url";
-import type { Device } from "@/lib/types";
+import type { Device, PlaylistItem } from "@/lib/types";
 
 /**
  * GET /api/display — the device's wake-up call: which image to show next,
@@ -76,6 +79,30 @@ function firmwareFields(
 		},
 	});
 	return { update_firmware: true, firmware_url: latest.downloadUrl };
+}
+
+/**
+ * What the device will show at its next wake: the same target, or in
+ * playlist mode the item that will be due then. Null when unknown.
+ */
+function nextWakeTarget(
+	device: Device,
+	shown: DisplayImageTarget,
+	playlistItems: PlaylistItem[],
+	playlistItem: PlaylistItem | null,
+	refreshSeconds: number,
+): DisplayImageTarget | null {
+	if (device.display_mode !== DeviceDisplayMode.PLAYLIST) {
+		return shown.kind === "error" ? null : shown;
+	}
+	if (!playlistItem) return null;
+	const next = selectPlaylistItem(
+		playlistItems,
+		playlistItem.order_index,
+		new Date(Date.now() + refreshSeconds * 1000),
+		device.timezone || "UTC",
+	);
+	return next ? { kind: "recipe", slug: next.screen_id } : null;
 }
 
 export async function GET(request: Request) {
@@ -128,12 +155,10 @@ export async function GET(request: Request) {
 			height: headers.height,
 		});
 		// A button press asking to restart the playlist starts it over.
-		const { playlistItem, refreshRate } = await recordDisplayVisit(
-			device,
-			headers,
-			undefined,
-			{ restartPlaylist: headers.specialFunction === "restart_playlist" },
-		);
+		const { playlistItem, playlistItems, refreshRate } =
+			await recordDisplayVisit(device, headers, undefined, {
+				restartPlaylist: headers.specialFunction === "restart_playlist",
+			});
 
 		const imageFor = (imagePath: string, query = selection.baseQueryParams) =>
 			buildDeviceImageUrl({
@@ -194,13 +219,13 @@ export async function GET(request: Request) {
 			selection.profile,
 		);
 		let renderOutcome = "on-demand";
+		const context = {
+			profile: selection.profile,
+			width: selection.width,
+			height: selection.height,
+			userId: device.user_id ?? (await getCurrentUserId()),
+		};
 		if (contentAddressedNames()) {
-			const context = {
-				profile: selection.profile,
-				width: selection.width,
-				height: selection.height,
-				userId: device.user_id ?? (await getCurrentUserId()),
-			};
 			let outcome = await prerenderDisplayImage(shown.target, context);
 			if (outcome.kind === "failed" && shown.target.kind !== "error") {
 				// Nothing renderable (and no last good frame): explain on screen
@@ -214,6 +239,27 @@ export async function GET(request: Request) {
 			}
 			renderOutcome = outcome.kind;
 			if (outcome.kind === "ready") filename = outcome.filename;
+		}
+
+		// Render the next wake's frame shortly before it, so data fetches do not
+		// happen while the device waits with Wi-Fi on.
+		if (contentAddressedNames()) {
+			const nextTarget = nextWakeTarget(
+				device,
+				shown.target,
+				playlistItems,
+				playlistItem,
+				refreshRate,
+			);
+			if (nextTarget) {
+				// Refetch data that would expire before the wake, with a little slack
+				// for the device waking late.
+				scheduleWarmup(String(device.id), refreshRate, (leadMs) =>
+					withFreshnessMargin(leadMs + 10_000, () =>
+						prerenderDisplayImage(nextTarget, context),
+					),
+				);
+			}
 		}
 
 		logInfo("Display request successful", {

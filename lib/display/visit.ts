@@ -50,6 +50,8 @@ export function calculateRefreshRate(
 export type DisplayVisit = {
 	/** Playlist mode only: the item to show, or null when none is eligible. */
 	playlistItem: PlaylistItem | null;
+	/** Playlist mode only: all items, e.g. to predict the next wake's item. */
+	playlistItems: PlaylistItem[];
 	refreshRate: number;
 };
 
@@ -59,8 +61,8 @@ async function activePlaylistItem(
 	conn: Conn,
 	device: Device,
 	at: Date,
-): Promise<PlaylistItem | null> {
-	if (!device.playlist_id) return null;
+): Promise<{ item: PlaylistItem | null; items: PlaylistItem[] }> {
+	if (!device.playlist_id) return { item: null, items: [] };
 	const rows = await conn
 		.selectFrom("playlist_items")
 		.selectAll()
@@ -72,10 +74,11 @@ async function activePlaylistItem(
 			source: "api/display",
 			metadata: { playlistId: device.playlist_id },
 		});
-		return null;
+		return { item: null, items: [] };
 	}
+	const items = rows.map(mapPlaylistItemRow);
 	const item = selectPlaylistItem(
-		rows.map(mapPlaylistItemRow),
+		items,
 		device.current_playlist_index ?? -1,
 		at,
 		device.timezone || "UTC",
@@ -86,7 +89,7 @@ async function activePlaylistItem(
 			metadata: { deviceId: device.friendly_id },
 		});
 	}
-	return item;
+	return { item, items };
 }
 
 async function writeDeviceStatus(
@@ -146,7 +149,7 @@ export async function recordDisplayVisit(
 ): Promise<DisplayVisit> {
 	const run = async (conn: Conn): Promise<DisplayVisit> => {
 		const playlistMode = device.display_mode === DeviceDisplayMode.PLAYLIST;
-		const playlistItem = playlistMode
+		const { item: playlistItem, items: playlistItems } = playlistMode
 			? await activePlaylistItem(
 					conn,
 					options.restartPlaylist
@@ -154,7 +157,7 @@ export async function recordDisplayVisit(
 						: device,
 					at,
 				)
-			: null;
+			: { item: null, items: [] };
 		const refreshRate = clampRefreshSeconds(
 			playlistMode
 				? (playlistItem?.duration ?? DISPLAY_FALLBACK_REFRESH_SECONDS)
@@ -173,7 +176,7 @@ export async function recordDisplayVisit(
 			playlistItem?.order_index,
 			at,
 		);
-		return { playlistItem, refreshRate };
+		return { playlistItem, playlistItems, refreshRate };
 	};
 	return device.user_id ? withExplicitUserScope(device.user_id, run) : run(db);
 }

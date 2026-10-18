@@ -170,6 +170,7 @@ test("a failed playlist write is reported; telemetry-only failure is best effort
 	).rejects.toThrow("database unavailable");
 	await expect(recordDisplayVisit(device(), headers, at)).resolves.toEqual({
 		playlistItem: null,
+		playlistItems: [],
 		refreshRate: 180,
 	});
 });
