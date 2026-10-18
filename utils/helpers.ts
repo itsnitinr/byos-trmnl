@@ -66,15 +66,23 @@ export function formatDate(dateString: string | null): string {
 	return diffMs < 0 ? `in ${timeText}` : `${timeText} ago`;
 }
 
+/**
+ * How late a device may check in before it counts as offline: devices wake on
+ * schedule but spend a few seconds rendering and joining Wi-Fi. 30 s plus 10%
+ * of the refresh interval, at most 10 minutes.
+ */
+export function offlineGraceMs(device: Pick<Device, "last_refresh_duration">) {
+	const intervalSeconds = Math.max(0, device.last_refresh_duration ?? 0);
+	return Math.min(10 * 60_000, 30_000 + intervalSeconds * 100);
+}
+
 // Determine device status based on next expected update time
 export function getDeviceStatus(device: Device): "online" | "offline" {
 	if (!device.next_expected_update) return "offline";
 
-	const nextExpectedUpdate = new Date(device.next_expected_update);
-	const now = new Date();
-
-	// Device is offline if current time is past the next expected update time
-	return now < nextExpectedUpdate ? "online" : "offline";
+	const deadline =
+		new Date(device.next_expected_update).getTime() + offlineGraceMs(device);
+	return Date.now() < deadline ? "online" : "offline";
 }
 
 // Parse log data to determine log type

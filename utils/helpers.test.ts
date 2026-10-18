@@ -195,11 +195,20 @@ describe("getDeviceStatus", () => {
 		expect(getDeviceStatus(device)).toBe("offline");
 	});
 
-	it("returns 'offline' when next_expected_update equals now", () => {
-		const device = makeDevice({
-			next_expected_update: new Date(FIXED_NOW).toISOString(),
-		});
-		expect(getDeviceStatus(device)).toBe("offline");
+	it("allows a late check-in: 30 s plus 10% of the refresh interval", () => {
+		const lateBy = (ms: number, interval: number | null) =>
+			getDeviceStatus(
+				makeDevice({
+					next_expected_update: new Date(FIXED_NOW - ms).toISOString(),
+					last_refresh_duration: interval,
+				}),
+			);
+		expect(lateBy(0, null)).toBe("online");
+		expect(lateBy(29_000, null)).toBe("online");
+		expect(lateBy(30_000, null)).toBe("offline");
+		expect(lateBy(110_000, 900)).toBe("online"); // grace 120 s
+		expect(lateBy(130_000, 900)).toBe("offline");
+		expect(lateBy(11 * 60_000, 86_400)).toBe("offline"); // capped at 10 min
 	});
 });
 
