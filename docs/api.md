@@ -92,6 +92,15 @@ Liveness for monitors and container healthchecks. Always `200` while the server
 runs, with `{ "status": "ok", "database": "ready" | "unavailable" | "not_configured" }`.
 `?require=database` answers `503` while the database is unavailable.
 
+### Image URLs behind a reverse proxy
+`image_url` is built from the request's `X-Forwarded-Proto` / `X-Forwarded-Host`
+(falling back to `Host` and `http`). TRMNL firmware sends `ID` and `Access-Token`
+with the image download only when `image_url` has the same origin as the API base
+URL configured on the device. If a TLS-terminating proxy does not forward the
+scheme, the device is handed `http://` URLs, withholds its token, and images are
+rendered without the owner's recipe settings. Make the proxy send
+`X-Forwarded-Proto` (and `X-Forwarded-Host` if it rewrites the host).
+
 ## Device Status Tracking
 The server records the following fields on display requests to aid debugging and scheduling:
 - Battery voltage
