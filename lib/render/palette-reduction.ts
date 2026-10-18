@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import {
-	clampByte,
-	floydSteinbergQuantize,
+	floydSteinbergDiffuse,
+	floydSteinbergGrayLut,
 	quantizeValue,
 } from "@/lib/render/quantize";
 import type { RGB } from "@/lib/trmnl/palette-colors";
@@ -94,6 +94,17 @@ function createPaletteMapper(paletteColors: RGB[]) {
 	};
 }
 
+function isGrayPalette(palette: RGB[]): boolean {
+	return palette.every((color) => color.r === color.g && color.g === color.b);
+}
+
+function isGrayImage(data: Uint8Array | Buffer): boolean {
+	for (let i = 0; i < data.length; i += 3) {
+		if (data[i] !== data[i + 1] || data[i] !== data[i + 2]) return false;
+	}
+	return true;
+}
+
 export function snapRgbToPalette(
 	data: Uint8Array | Buffer,
 	paletteColors: RGB[],
@@ -118,9 +129,34 @@ export function reduceRgbToPalette(
 ): Uint8Array {
 	if (mode === "snap") return snapRgbToPalette(data, paletteColors);
 	const nearest = createPaletteMapper(paletteColors);
-	return floydSteinbergQuantize(data, width, height, 3, ([r, g, b]) => {
-		const color = nearest(clampByte(r), clampByte(g), clampByte(b));
-		return [(color >>> 16) & 255, (color >>> 8) & 255, color & 255];
+	if (isGrayPalette(paletteColors) && isGrayImage(data)) {
+		// With gray pixels and a gray palette every channel carries the same
+		// value and the same error, so diffusing one channel and copying it is
+		// exactly the 3-channel result at a third of the work.
+		const lut = new Uint8Array(256);
+		for (let v = 0; v < 256; v++) lut[v] = nearest(v, v, v) & 255;
+		const luma = new Uint8Array(width * height);
+		for (let i = 0, p = 0; p < luma.length; i += 3, p++) luma[p] = data[i];
+		const reduced = floydSteinbergDiffuse(
+			luma,
+			width,
+			height,
+			1,
+			(input, output) => {
+				output[0] = lut[input[0]];
+			},
+		);
+		const output = new Uint8Array(data.length);
+		for (let i = 0, p = 0; p < reduced.length; i += 3, p++) {
+			output[i] = output[i + 1] = output[i + 2] = reduced[p];
+		}
+		return output;
+	}
+	return floydSteinbergDiffuse(data, width, height, 3, (input, output) => {
+		const color = nearest(input[0], input[1], input[2]);
+		output[0] = (color >>> 16) & 255;
+		output[1] = (color >>> 8) & 255;
+		output[2] = color & 255;
 	});
 }
 
