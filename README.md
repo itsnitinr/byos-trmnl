@@ -146,6 +146,18 @@ The first account created during setup is assigned the admin role automatically.
 - **Docker/Postgres:** set `POSTGRES_PASSWORD` and `BETTER_AUTH_SECRET` in `.env`, then run `docker-compose up -d`.
 - **No-DB mode:** run `pnpm dev` without DB env vars to preview screens only (device management disabled).
 
+### Security notes
+- **Single-user mode (`AUTH_ENABLED=false`) trusts the network.** Anyone who can reach the server
+  can use the dashboard, and any device token is accepted and registered. Keep such instances on a
+  LAN or behind a VPN/authenticating proxy.
+- With authentication on, set `BETTER_AUTH_SECRET` (startup reports it if missing) and
+  `BETTER_AUTH_URL`. Unknown devices get a claim code instead of being registered; codes expire
+  after 24 hours.
+- Behind a TLS-terminating proxy, forward `X-Forwarded-Proto`/`X-Forwarded-Host`, otherwise devices
+  are given `http://` image URLs and omit their token when downloading (see `docs/api.md`).
+- Do not expose Postgres. The app's `byos_app` role is `NOLOGIN` since migration 0024.
+- DIY kits and other boards running custom firmware should set `FIRMWARE_UPDATES=off`.
+
 ## Project Structure
 - `app/` - Next.js routes and screens (including `/recipes`).
 - `components/` - UI components.
