@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import {
-	floydSteinbergDiffuse,
 	floydSteinbergGrayLut,
+	floydSteinbergRgb,
 	quantizeValue,
 } from "@/lib/render/quantize";
 import type { RGB } from "@/lib/trmnl/palette-colors";
@@ -77,19 +77,32 @@ export function nearestPaletteColor(
 	return best;
 }
 
+/** Direct-mapped memo size for non-gray colours (2^18 entries, 2 MiB). */
+const COLOR_CACHE_BITS = 18;
+
 function createPaletteMapper(paletteColors: RGB[]) {
 	const palette = createLabPalette(paletteColors);
 	const gray = new Int32Array(256).fill(-1);
-	const memo = new Map<number, number>();
+	// Keys are 0xRRGGBB, so -1 marks an empty slot. Collisions just recompute.
+	const cacheSize = 1 << COLOR_CACHE_BITS;
+	const keys = new Int32Array(cacheSize).fill(-1);
+	const values = new Int32Array(cacheSize);
 	return (r: number, g: number, b: number): number => {
+		if (r === g && g === b) {
+			const cached = gray[r];
+			if (cached !== -1) return cached;
+			const color = nearestPaletteColor({ r, g, b }, palette);
+			gray[r] = (color.r << 16) | (color.g << 8) | color.b;
+			return gray[r];
+		}
 		const key = (r << 16) | (g << 8) | b;
-		const isGray = r === g && g === b;
-		const cached = isGray ? gray[r] : memo.get(key);
-		if (cached !== undefined && cached !== -1) return cached;
+		// Fibonacci hashing spreads neighbouring colours across the table.
+		const slot = Math.imul(key, 0x9e3779b1) >>> (32 - COLOR_CACHE_BITS);
+		if (keys[slot] === key) return values[slot];
 		const color = nearestPaletteColor({ r, g, b }, palette);
 		const packed = (color.r << 16) | (color.g << 8) | color.b;
-		if (isGray) gray[r] = packed;
-		else if (memo.size < 65_536) memo.set(key, packed);
+		keys[slot] = key;
+		values[slot] = packed;
 		return packed;
 	};
 }
@@ -156,12 +169,7 @@ export function reduceRgbToPalette(
 		}
 		return output;
 	}
-	return floydSteinbergDiffuse(data, width, height, 3, (input, output) => {
-		const color = nearest(input[0], input[1], input[2]);
-		output[0] = (color >>> 16) & 255;
-		output[1] = (color >>> 8) & 255;
-		output[2] = color & 255;
-	});
+	return floydSteinbergRgb(data, width, height, nearest);
 }
 
 export async function reducePngToPalette(

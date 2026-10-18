@@ -132,6 +132,72 @@ export function floydSteinbergGrayLut(
 	return result;
 }
 
+/**
+ * Three-channel `floydSteinbergDiffuse` with scalar channels and a packed
+ * `0xRRGGBB` mapper: the hot path for colour or tinted frames. Same
+ * arithmetic and order, so output is bit-identical.
+ */
+export function floydSteinbergRgb(
+	data: Uint8Array | Buffer,
+	width: number,
+	height: number,
+	nearestPacked: (r: number, g: number, b: number) => number,
+): Uint8Array {
+	const rowLength = width * 3;
+	const result = new Uint8Array(data.length);
+	let current = new Float64Array(rowLength);
+	let next = new Float64Array(rowLength);
+	for (let i = 0; i < rowLength && i < data.length; i++) current[i] = data[i];
+	for (let y = 0; y < height; y++) {
+		const hasNext = y + 1 < height;
+		const rowOffset = y * rowLength;
+		if (hasNext) {
+			const nextOffset = rowOffset + rowLength;
+			for (let i = 0; i < rowLength; i++) next[i] = data[nextOffset + i];
+		}
+		for (let x = 0; x < width; x++) {
+			const i = x * 3;
+			const r = clampByte(current[i]);
+			const g = clampByte(current[i + 1]);
+			const b = clampByte(current[i + 2]);
+			const packed = nearestPacked(r, g, b);
+			const nr = (packed >>> 16) & 255;
+			const ng = (packed >>> 8) & 255;
+			const nb = packed & 255;
+			result[rowOffset + i] = nr;
+			result[rowOffset + i + 1] = ng;
+			result[rowOffset + i + 2] = nb;
+			const er = r - nr;
+			const eg = g - ng;
+			const eb = b - nb;
+			if (x + 1 < width) {
+				current[i + 3] += er * (7 / 16);
+				current[i + 4] += eg * (7 / 16);
+				current[i + 5] += eb * (7 / 16);
+			}
+			if (hasNext) {
+				if (x > 0) {
+					next[i - 3] += er * (3 / 16);
+					next[i - 2] += eg * (3 / 16);
+					next[i - 1] += eb * (3 / 16);
+				}
+				next[i] += er * (5 / 16);
+				next[i + 1] += eg * (5 / 16);
+				next[i + 2] += eb * (5 / 16);
+				if (x + 1 < width) {
+					next[i + 3] += er * (1 / 16);
+					next[i + 4] += eg * (1 / 16);
+					next[i + 5] += eb * (1 / 16);
+				}
+			}
+		}
+		const swap = current;
+		current = next;
+		next = swap;
+	}
+	return result;
+}
+
 export function floydSteinbergQuantize(
 	data: Uint8Array | Buffer,
 	width: number,
