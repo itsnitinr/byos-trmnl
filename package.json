@@ -26,6 +26,7 @@
 		"release:patch": "pnpm version patch -m 'chore(release): %s' && git push --follow-tags",
 		"test:render": "node scripts/check-rendering.mjs",
 		"test:browser": "node scripts/check-browser-rendering.cjs",
+		"test:pages": "node scripts/check-pages.cjs",
 		"benchmark:png": "node scripts/benchmark-png.cjs"
 	},
 	"dependencies": {

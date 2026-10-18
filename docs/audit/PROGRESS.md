@@ -6,6 +6,21 @@ The `main` checkout had uncommitted sun-path recipe work; it was intentionally l
 This file is the hand-off point for any agent continuing the audit. Keep it current:
 tick items as they land, add a line to the validation log, and record decisions.
 
+**Status (2026-10-18):** all planned items are done and validated; remaining ideas are listed under
+"Open / ideas not done". The branch has not been pushed or merged.
+
+## Upgrade notes for an existing installation
+
+- Apply migrations 0023 (FK actions + indexes; builds indexes on `logs`, which can take a moment
+  on a large table) and 0024 (`byos_app` → NOLOGIN, no access to auth tables). Use the setup
+  screen or `AUTO_MIGRATE=true`. 0024 only warns if the connecting role may not alter `byos_app`.
+- New optional settings: `AUTO_MIGRATE`, `FIRMWARE_UPDATES` (set `off` for DIY kits on custom
+  firmware), `LOG_DB_LEVEL`, `DATABASE_POOL_MAX`, `DATABASE_STATEMENT_TIMEOUT_MS`, `DATABASE_SSL`,
+  `TRMNL_REGISTRY_CACHE_DIR`, `RESEND_API_KEY`/`EMAIL_FROM` (documented, previously undocumented).
+- Behaviour changes: unauthenticated API calls get 401 JSON (pages still redirect); pending device
+  claims expire after 24 h; display responses include `image_url_timeout: 30`; refresh intervals are
+  clamped to 1 s–24 h; devices count as offline only after a grace period.
+
 ## How to resume
 
 ```bash
@@ -137,7 +152,7 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   schedule stored as `"900"`; malformed `RSSI` ignored; image ETag → 304; `/api/log` 413/422/204;
   `/api/markup` runaway loop cut at 5.0 s; SIGTERM during that request → request completed, then exit.
 - After `3781135`: 29 Postgres integration tests (incl. `/api/display` and `/api/setup` route tests),
-  201 unit tests. Headless-Chrome smoke test (`/tmp/byos-smoke/smoke.cjs`, Playwright's Chromium via
+  201 unit tests. Headless-Chrome smoke test (now `scripts/check-pages.cjs`, Playwright's Chromium via
   puppeteer-core; the T3 in-app browser is blocked by AppArmor on this host) of 12 pages in
   single-user mode: no page errors; only local-news (Reddit 403 from this IP) and whos-overhead
   (upstream unavailable) previews fail, both upstream. Device page "System logs" tab now lists the
@@ -147,8 +162,18 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   (transform 38, reduce ~30, indexed pack ~25); the larger figures seen under load are thread-pool
   contention, not a hot spot.
 
+- Final (after `e9ac005` + page smoke script): 207 unit / 40 suites, 29 Postgres integration tests,
+  tsc/Biome clean, production build without generated-file drift; fresh DB with `AUTO_MIGRATE`
+  applied all 25 migrations at boot; device setup → display (`image_url_timeout: 30`) → image → log;
+  `/api/health`; pixel baselines exact; `pnpm test:browser` passed; page smoke test clean on
+  dashboard, device, playlists, air-quality, sunrise-sunset, system logs, mixup, render inspector.
+
 ## Open / ideas not done
 
+- Server-side checks, run against a live server: `pnpm test:render` (pixel baselines),
+  `pnpm test:browser` (real Chrome), and the new `pnpm test:pages` (page smoke test; needs
+  `BASE_URL` and `CHROME_EXECUTABLE_PATH` — on this host Playwright's Chromium lives under
+  `~/.cache/ms-playwright/`).
 - Rate limiting for public device endpoints (`/api/display`, `/api/bitmap`); single-user mode
   registers any token by design — documented under README "Security notes" instead.
 - Gray-only fast path for encoding (1-channel reduce + pack) could save ~40 ms per X frame.
