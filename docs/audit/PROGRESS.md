@@ -99,6 +99,12 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
 - [x] Device page hydration error (#418) from the relative "next refresh" chip.
 - [x] BYOS release check: no timeout, no single-flight, retried GitHub on every page view after a
   failure.
+- [x] Mixup slots rendered without the model's screen profile → half-size layout on TRMNL X.
+- [x] Devices flickered "offline" at every check-in (no grace period).
+- [x] Firmware waits 15 s for the image by default; cold Liquid/browser renders can exceed it →
+  responses now carry `image_url_timeout: 30` (firmware source: `parse_response_api_display.cpp`).
+- [~] Firmware sends `Access-Token` with the image download only when the image URL is same-origin
+  with its API base URL; documented the `X-Forwarded-Proto` requirement (docs/api.md, README).
 
 ### Maintainability
 
@@ -131,8 +137,21 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   schedule stored as `"900"`; malformed `RSSI` ignored; image ETag → 304; `/api/log` 413/422/204;
   `/api/markup` runaway loop cut at 5.0 s; SIGTERM during that request → request completed, then exit.
 - After `3781135`: 29 Postgres integration tests (incl. `/api/display` and `/api/setup` route tests),
-  205 unit tests. Headless-Chrome smoke test (`/tmp/byos-smoke/smoke.cjs`, Playwright's Chromium via
+  201 unit tests. Headless-Chrome smoke test (`/tmp/byos-smoke/smoke.cjs`, Playwright's Chromium via
   puppeteer-core; the T3 in-app browser is blocked by AppArmor on this host) of 12 pages in
   single-user mode: no page errors; only local-news (Reddit 403 from this IP) and whos-overhead
   (upstream unavailable) previews fail, both upstream. Device page "System logs" tab now lists the
   device's display rows.
+- After `c463616`: `pnpm test:render` pixel baselines (800×480 bw, 480×800 gray-4, 1872×1404
+  gray-16) still match exactly. Encode stage profiled in isolation at 1872×1404: ~110–135 ms
+  (transform 38, reduce ~30, indexed pack ~25); the larger figures seen under load are thread-pool
+  contention, not a hot spot.
+
+## Open / ideas not done
+
+- Rate limiting for public device endpoints (`/api/display`, `/api/bitmap`); single-user mode
+  registers any token by design — documented under README "Security notes" instead.
+- Gray-only fast path for encoding (1-channel reduce + pack) could save ~40 ms per X frame.
+- `/api/bitmap` answers 500 with an error image when upstream data is unavailable and nothing is
+  cached; 502/503 might describe that better (firmware treats any non-200 the same).
+- Node engine pin is 22.22.3; validation here ran on Node 24.21.0.
