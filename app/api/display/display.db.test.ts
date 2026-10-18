@@ -6,6 +6,10 @@ jest.mock("@/lib/auth/get-user", () => ({
 	getCurrentUserId: jest.fn(async () => sessionUser),
 }));
 
+// The browser renderer is not used here (Takumi renders React recipes), and
+// puppeteer-core ships ESM only.
+jest.mock("puppeteer-core", () => ({ __esModule: true, default: {} }));
+
 const url = process.env.DATABASE_URL as string;
 type Route = typeof import("./route");
 let route: Route;
@@ -35,10 +39,10 @@ afterAll(async () => {
 	await db.destroy();
 });
 
-test("rejects requests without a token", async () => {
+test("without a token the device keeps its screen (never a reset status)", async () => {
 	const body = await display({ ID: "AA:00:00:00:00:01" });
-	expect(body).toMatchObject({ status: 401 });
-	expect(body.image_url).toContain("/api/bitmap/error.png");
+	expect(body).toMatchObject({ status: 401, reset_firmware: false });
+	expect(body.image_url).toBeUndefined();
 });
 
 test("single-user mode registers a new device and records telemetry", async () => {
@@ -63,8 +67,27 @@ test("single-user mode registers a new device and records telemetry", async () =
 		"http://byos.test/api/bitmap/simple-text.png?width=800&height=480&model=og_png&palette_id=bw",
 	);
 
+	// Unchanged content keeps its name, so firmware skips download and redraw.
 	const second = await display(headers);
-	expect(second.filename).not.toBe(first.filename);
+	expect(first.filename).toMatch(/^simple-tex-[0-9a-f]{14}\.png$/);
+	expect(second.filename).toBe(first.filename);
+
+	// The name is the hash of exactly what the image route serves.
+	const { GET: bitmap } = require("../bitmap/[[...slug]]/route") as {
+		GET: (req: Request, ctx: unknown) => Promise<Response>;
+	};
+	const image = await bitmap(
+		new Request(first.image_url, {
+			headers: { "Access-Token": "display-test-token-0001" },
+		}),
+		{ params: Promise.resolve({ slug: ["simple-text.png"] }) },
+	);
+	expect(image.status).toBe(200);
+	const bytes = Buffer.from(await image.arrayBuffer());
+	const { createHash } = require("node:crypto") as typeof import("node:crypto");
+	expect(first.filename).toContain(
+		createHash("sha256").update(bytes).digest("hex").slice(0, 14),
+	);
 
 	const { rows } = await withClient(url, (client) =>
 		client.query(

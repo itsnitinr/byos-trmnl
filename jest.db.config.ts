@@ -14,6 +14,7 @@ const config: Config = {
 	maxWorkers: 1,
 	testTimeout: 60_000,
 	moduleNameMapper: {
+		"^next/font/(google|local)$": "<rootDir>/tests/mocks/next-font.ts",
 		"^@/(.*)$": "<rootDir>/$1",
 	},
 	// Kysely ships ESM only; compile it to CommonJS like the TypeScript sources.
@@ -25,8 +26,11 @@ const config: Config = {
 				tsconfig: {
 					rootDir: ".",
 					allowJs: true,
-					moduleResolution: "node16",
-					module: "node16",
+					// CommonJS so recipe loaders' dynamic import() becomes require()
+					// (Jest's module runtime cannot execute import()).
+					moduleResolution: "node10",
+					module: "commonjs",
+					ignoreDeprecations: "6.0",
 				},
 			},
 		],
