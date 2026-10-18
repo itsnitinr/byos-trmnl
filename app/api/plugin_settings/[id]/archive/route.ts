@@ -6,6 +6,7 @@ import {
 import {
 	jsonError,
 	MAX_ARCHIVE_BYTES,
+	readBoundedFormData,
 	rejectOversizedRequest,
 } from "@/lib/trmnl/plugin-settings-validation";
 
@@ -46,7 +47,8 @@ export async function POST(
 	const readOnly = rejectReadOnlyPluginSetting(access.setting);
 	if (readOnly) return readOnly;
 
-	const formData = await request.formData();
+	const formData = await readBoundedFormData(request, MAX_ARCHIVE_BYTES);
+	if (formData instanceof Response) return formData;
 	const file = formData.get("file") ?? formData.get("archive");
 	const settingsYaml =
 		typeof file === "string"

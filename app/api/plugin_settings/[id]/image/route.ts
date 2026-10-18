@@ -7,6 +7,7 @@ import {
 	ALLOWED_IMAGE_MIME_TYPES,
 	jsonError,
 	MAX_INLINE_IMAGE_BYTES,
+	readBoundedFormData,
 	rejectOversizedRequest,
 	sniffImageMimeType,
 } from "@/lib/trmnl/plugin-settings-validation";
@@ -35,7 +36,8 @@ export async function POST(
 	const readOnly = rejectReadOnlyPluginSetting(access.setting);
 	if (readOnly) return readOnly;
 
-	const formData = await request.formData();
+	const formData = await readBoundedFormData(request, MAX_INLINE_IMAGE_BYTES);
+	if (formData instanceof Response) return formData;
 	const image = formData.get("image") ?? formData.get("file");
 	if (!image || typeof image === "string" || !("arrayBuffer" in image)) {
 		return jsonError("image file is required");
