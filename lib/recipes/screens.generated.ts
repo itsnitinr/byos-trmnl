@@ -41,6 +41,7 @@ export const reactRecipeLoaders: Record<string, RecipeModuleLoader> = {
 		),
 	"simple-text": () =>
 		import("../../app/(app)/recipes/screens/simple-text/simple-text"),
+	"sun-path": () => import("../../app/(app)/recipes/screens/sun-path/sun-path"),
 	"sunrise-sunset": () =>
 		import("../../app/(app)/recipes/screens/sunrise-sunset/sunrise-sunset"),
 	weather: () => import("../../app/(app)/recipes/screens/weather/weather"),
@@ -71,6 +72,7 @@ export const reactRecipeSlugs = [
 	"not-found",
 	"responsive-example",
 	"simple-text",
+	"sun-path",
 	"sunrise-sunset",
 	"weather",
 	"whos-overhead",

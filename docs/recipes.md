@@ -126,6 +126,23 @@ partial grid, the runtime keeps showing the last complete map.
 
 ![Wind map around Reykjavík, 1200 km across](screenshots/wind-map.png)
 
+## Sun Path
+
+The `sun-path` recipe draws an architect-style sun-path chart for `latitude`
+and `longitude`. The horizon is the rim and overhead is the centre, with north
+up and east on the right as on a site plan. It shows today's arc with a bead
+for each hour against dashed solstice arcs, the sun's current position, and
+the direction shadows fall. The panel lists sunrise, solar noon, sunset,
+daylight and its change from yesterday. Inside the tropics it also lists the
+two zero-shadow days when the noon sun passes overhead.
+
+The positions use the NOAA solar equations shared with `sunrise-sunset`
+(`lib/recipes/astro/sun.ts`), with no network access. Times use `timezone`,
+including DST changeover days. Live frames advance every ten minutes. Set
+`date` (`YYYY-MM-DD`) to pin a day, such as a solstice, without a live sun.
+
+![Sun path over Bengaluru at sunset](screenshots/sun-path.png)
+
 ## Fetching Data
 
 If a recipe needs to fetch data at render time, add a `getData` function
