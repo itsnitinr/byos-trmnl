@@ -184,6 +184,12 @@ final shape to `Component` as `data`.
 For complex data fetchers, keep them in a sibling `getData.ts` file and
 import the function into your `definition`.
 
+Fetched data is cached for `meta.dataRefreshSeconds` (default 300 seconds),
+independently of how often devices wake up. Set it to match how often the source
+changes and the upstream API's rate limits; users can override it per recipe.
+If a refresh fails, the last good data (up to a day old) is shown with a
+"stale" stamp.
+
 ## Device Image Rendering
 
 The recipe runtime renders each React component into the selected device's image

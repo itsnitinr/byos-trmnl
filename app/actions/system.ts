@@ -1,8 +1,12 @@
 "use server";
 
+import type { ExpressionBuilder } from "kysely";
 import { auth } from "@/lib/auth/auth";
 import { getCurrentUser } from "@/lib/auth/get-user";
 import { db } from "@/lib/database/db";
+import type { DB } from "@/lib/database/db.d";
+import { containsPattern } from "@/lib/database/like";
+import { mapSystemLogRow } from "@/lib/database/mappers";
 import { checkDbConnection } from "@/lib/database/utils";
 import type { SystemLog } from "@/lib/types";
 
@@ -20,6 +24,9 @@ type FetchSystemLogsResult = {
 	uniqueSources: string[];
 };
 
+const EMPTY: FetchSystemLogsResult = { logs: [], total: 0, uniqueSources: [] };
+const MAX_PER_PAGE = 200;
+
 export async function canReadSystemLogs(): Promise<boolean> {
 	if (!auth) {
 		return true;
@@ -27,6 +34,79 @@ export async function canReadSystemLogs(): Promise<boolean> {
 
 	const user = await getCurrentUser();
 	return user?.role === "admin";
+}
+
+type Filters = {
+	level?: string;
+	source?: string;
+	search?: string;
+	/** Any of these values appearing as a quoted JSON value in metadata. */
+	metadataValues?: string[];
+};
+
+function applyFilters(eb: ExpressionBuilder<DB, "system_logs">, f: Filters) {
+	const conditions = [];
+	if (f.level) conditions.push(eb("level", "=", f.level));
+	if (f.source) conditions.push(eb("source", "=", f.source));
+
+	if (f.search) {
+		const pattern = containsPattern(f.search);
+		conditions.push(
+			eb.or([
+				eb("message", "ilike", pattern),
+				eb("metadata", "ilike", pattern),
+			]),
+		);
+	}
+	if (f.metadataValues?.length) {
+		conditions.push(
+			eb.or(
+				f.metadataValues.map((value) =>
+					eb("metadata", "ilike", containsPattern(`"${value}"`)),
+				),
+			),
+		);
+	}
+	return eb.and(conditions);
+}
+
+async function querySystemLogs(
+	page: number,
+	perPage: number,
+	filters: Filters,
+): Promise<FetchSystemLogsResult> {
+	const limit = Math.min(MAX_PER_PAGE, Math.max(1, Math.trunc(perPage) || 1));
+	const offset = (Math.max(1, Math.trunc(page) || 1) - 1) * limit;
+
+	const [logs, count, sources] = await Promise.all([
+		db
+			.selectFrom("system_logs")
+			.selectAll()
+			.where((eb) => applyFilters(eb, filters))
+			.orderBy("created_at", "desc")
+			.limit(limit)
+			.offset(offset)
+			.execute(),
+		db
+			.selectFrom("system_logs")
+			.select((eb) => eb.fn.countAll().as("count"))
+			.where((eb) => applyFilters(eb, filters))
+			.executeTakeFirst(),
+		db
+			.selectFrom("system_logs")
+			.select("source")
+			.distinct()
+			.orderBy("source", "asc")
+			.execute(),
+	]);
+
+	return {
+		logs: logs.map(mapSystemLogRow),
+		total: Number(count?.count || 0),
+		uniqueSources: sources
+			.map((item) => item.source)
+			.filter((source): source is string => Boolean(source)),
+	};
 }
 
 export async function fetchSystemLogs({
@@ -37,92 +117,17 @@ export async function fetchSystemLogs({
 	source,
 }: FetchSystemLogsParams): Promise<FetchSystemLogsResult> {
 	const { ready } = await checkDbConnection();
-
 	if (!ready) {
 		console.warn("Database client not initialized");
-		return { logs: [], total: 0, uniqueSources: [] };
+		return EMPTY;
 	}
+	if (!(await canReadSystemLogs())) return EMPTY;
 
-	if (!(await canReadSystemLogs())) {
-		return { logs: [], total: 0, uniqueSources: [] };
-	}
-
-	// Calculate pagination
-	const offset = (page - 1) * perPage;
-
-	// Start building the query
-	let query = db.selectFrom("system_logs").selectAll();
-
-	// Apply filters
-	if (level) {
-		query = query.where("level", "=", level);
-	}
-
-	if (source) {
-		query = query.where("source", "=", source);
-	}
-
-	if (search) {
-		query = query.where((eb) =>
-			eb.or([
-				eb("message", "ilike", `%${search}%`),
-				eb("metadata", "ilike", `%${search}%`),
-			]),
-		);
-	}
-
-	// Get paginated results
-	const logs = await query
-		.orderBy("created_at", "desc")
-		.limit(perPage)
-		.offset(offset)
-		.execute();
-
-	// Get total count
-	let countQuery = db
-		.selectFrom("system_logs")
-		.select((eb) => eb.fn.countAll().as("count"));
-
-	if (level) {
-		countQuery = countQuery.where("level", "=", level);
-	}
-
-	if (source) {
-		countQuery = countQuery.where("source", "=", source);
-	}
-
-	if (search) {
-		countQuery = countQuery.where((eb) =>
-			eb.or([
-				eb("message", "ilike", `%${search}%`),
-				eb("metadata", "ilike", `%${search}%`),
-			]),
-		);
-	}
-
-	const countResult = await countQuery.executeTakeFirst();
-
-	// Get unique sources for the filter dropdown
-	const uniqueSourcesResult = await db
-		.selectFrom("system_logs")
-		.select("source")
-		.distinct()
-		.orderBy("source", "asc")
-		.execute();
-
-	const uniqueSources = uniqueSourcesResult
-		.map((item) => item.source)
-		.filter(Boolean) as string[];
-
-	return {
-		logs: logs as unknown as SystemLog[],
-		total: Number(countResult?.count || 0),
-		uniqueSources,
-	};
+	return querySystemLogs(page, perPage, { search, level, source });
 }
 
 /**
- * Fetch system logs that contain device information in the metadata
+ * Fetch system logs that mention a device in their metadata
  */
 export type FetchDeviceSystemLogsParams = {
 	page: number;
@@ -142,138 +147,29 @@ export async function fetchDeviceSystemLogs({
 	search,
 	level,
 	source,
-	deviceId,
 	friendlyId,
 	macAddress,
 	apiKey,
 }: FetchDeviceSystemLogsParams): Promise<FetchSystemLogsResult> {
 	const { ready } = await checkDbConnection();
-
 	if (!ready) {
 		console.warn("Database client not initialized");
-		return { logs: [], total: 0, uniqueSources: [] };
+		return EMPTY;
 	}
+	if (!(await canReadSystemLogs())) return EMPTY;
 
-	if (!(await canReadSystemLogs())) {
-		return { logs: [], total: 0, uniqueSources: [] };
-	}
+	// Routes log the device under different keys (deviceId, device_id,
+	// friendly_id), so match the quoted value itself. API keys are only ever
+	// logged as their first six characters.
+	const metadataValues = [friendlyId, macAddress, apiKey?.slice(0, 6)].filter(
+		(value): value is string => Boolean(value),
+	);
+	if (metadataValues.length === 0) return EMPTY;
 
-	// Calculate pagination
-	const offset = (page - 1) * perPage;
-
-	// Start building the query
-	let query = db.selectFrom("system_logs").selectAll();
-
-	// Apply filters
-	if (level) {
-		query = query.where("level", "=", level);
-	}
-
-	if (source) {
-		query = query.where("source", "=", source);
-	}
-
-	query = query.where((eb) => {
-		// We need to handle expression builder correctly
-		const ors = [];
-
-		if (search) {
-			ors.push(eb("message", "ilike", `%${search}%`));
-			ors.push(eb("metadata", "ilike", `%${search}%`));
-		}
-
-		if (deviceId) {
-			ors.push(eb("metadata", "ilike", `%"device_id":${deviceId}%`));
-			ors.push(eb("metadata", "ilike", `%"id":${deviceId}%`));
-		}
-
-		if (friendlyId) {
-			ors.push(eb("metadata", "ilike", `%"friendly_id":"${friendlyId}"%`));
-		}
-
-		if (macAddress) {
-			ors.push(eb("metadata", "ilike", `%"mac_address":"${macAddress}"%`));
-		}
-
-		if (apiKey) {
-			ors.push(eb("metadata", "ilike", `%"api_key":"${apiKey}"%`));
-		}
-
-		if (ors.length > 0) {
-			return eb.or(ors);
-		}
-
-		return eb.and([]); // No conditions added to this group if nothing matched
+	return querySystemLogs(page, perPage, {
+		search,
+		level,
+		source,
+		metadataValues,
 	});
-
-	// Get paginated results
-	const logs = await query
-		.orderBy("created_at", "desc")
-		.limit(perPage)
-		.offset(offset)
-		.execute();
-
-	// Get total count
-	let countQuery = db
-		.selectFrom("system_logs")
-		.select((eb) => eb.fn.countAll().as("count"));
-
-	if (level) {
-		countQuery = countQuery.where("level", "=", level);
-	}
-
-	if (source) {
-		countQuery = countQuery.where("source", "=", source);
-	}
-
-	countQuery = countQuery.where((eb) => {
-		const ors = [];
-
-		if (search) {
-			ors.push(eb("message", "ilike", `%${search}%`));
-			ors.push(eb("metadata", "ilike", `%${search}%`));
-		}
-
-		if (deviceId) {
-			ors.push(eb("metadata", "ilike", `%"device_id":${deviceId}%`));
-			ors.push(eb("metadata", "ilike", `%"id":${deviceId}%`));
-		}
-
-		if (friendlyId) {
-			ors.push(eb("metadata", "ilike", `%"friendly_id":"${friendlyId}"%`));
-		}
-
-		if (macAddress) {
-			ors.push(eb("metadata", "ilike", `%"mac_address":"${macAddress}"%`));
-		}
-
-		if (apiKey) {
-			ors.push(eb("metadata", "ilike", `%"api_key":"${apiKey}"%`));
-		}
-
-		if (ors.length > 0) {
-			return eb.or(ors);
-		}
-		return eb.and([]);
-	});
-
-	const countResult = await countQuery.executeTakeFirst();
-
-	// Get unique sources for the filter dropdown
-	const uniqueSourcesResult = await db
-		.selectFrom("system_logs")
-		.select("source")
-		.distinct()
-		.orderBy("source", "asc")
-		.execute();
-
-	const uniqueSources = uniqueSourcesResult
-		.map((item) => item.source)
-		.filter(Boolean) as string[];
-
-	return {
-		logs: logs as unknown as SystemLog[],
-		total: Number(countResult?.count || 0),
-		uniqueSources,
-	};
 }

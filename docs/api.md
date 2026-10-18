@@ -54,6 +54,7 @@ curl -X GET http://<BASE_URL>/api/display \
 {
   "status": 0,
   "image_url": "https://<BASE_URL>/api/bitmap/DEVICE_ID_TIMESTAMP.png",
+  "image_url_timeout": 30,
   "filename": "DEVICE_ID_TIMESTAMP.png",
   "refresh_rate": 180,
   "reset_firmware": false,
@@ -64,21 +65,42 @@ curl -X GET http://<BASE_URL>/api/display \
 ```
 
 ### `POST /api/log`
-Captures device-side errors for later diagnosis.
+Uploads buffered device log entries for later diagnosis. The device must already
+belong to an owner (claimed or created in single-user mode).
 
 **Headers**
-- `ID` (required): Device MAC address.
-- `Access-Token` (recommended): Issued API key.
+- `Access-Token` (required): Issued API key.
+- `ID` (optional): Device MAC address; must not belong to a different device.
+- Optional telemetry: `Refresh-Rate`, `Battery-Voltage`, `FW-Version`, `RSSI`.
 
 **Body**
 ```json
 {
-  "message": "Human-readable description",
-  "metadata": {
-    "stack": "optional stack or telemetry"
-  }
+  "logs": [
+    { "creation_timestamp": 1760000000, "message": "WiFi connected", "level": "info" }
+  ]
 }
 ```
+
+**Responses**
+- `204` saved.
+- `401` missing `Access-Token`; `400` device has no owner; `409` `ID` belongs to another device.
+- `413` body larger than 256 KiB; `422` not JSON or not `{ "logs": [] }`.
+- Batches over 200 entries keep the newest 200 and record `dropped_entries`.
+
+### `GET /api/health`
+Liveness for monitors and container healthchecks. Always `200` while the server
+runs, with `{ "status": "ok", "database": "ready" | "unavailable" | "not_configured" }`.
+`?require=database` answers `503` while the database is unavailable.
+
+### Image URLs behind a reverse proxy
+`image_url` is built from the request's `X-Forwarded-Proto` / `X-Forwarded-Host`
+(falling back to `Host` and `http`). TRMNL firmware sends `ID` and `Access-Token`
+with the image download only when `image_url` has the same origin as the API base
+URL configured on the device. If a TLS-terminating proxy does not forward the
+scheme, the device is handed `http://` URLs, withholds its token, and images are
+rendered without the owner's recipe settings. Make the proxy send
+`X-Forwarded-Proto` (and `X-Forwarded-Host` if it rewrites the host).
 
 ## Device Status Tracking
 The server records the following fields on display requests to aid debugging and scheduling:
@@ -91,10 +113,16 @@ The server records the following fields on display requests to aid debugging and
 ## Screen Generation Pipeline
 - Image format: derived from the selected device model (`image/png` for TRMNL
   e-ink models, `image/webp` for WebP-capable displays).
-- Renderer: Takumi (default) or Satori (`REACT_RENDERER` env var).
+- Renderer: Takumi (default), Satori or headless Chrome (`REACT_RENDERER` env var).
 - Pipeline: recipe component → renderer PNG → device color reduction → encoder
   selected by `model.mime_type`.
-- Caching: 60-second cache with background revalidation by Next.js (development uses in-memory cache).
+- Caching (in-process, per server instance):
+  - Recipe data from `getData` / polling URLs is reused for the recipe's
+    `meta.dataRefreshSeconds` (default 300 s, user-overridable); on fetch errors
+    the last good data (up to 24 h old) is shown with a stale marker.
+  - Rendered frames are reused for `renderSettings.cacheSeconds` (default 30 s),
+    and encoded device images are content-addressed.
+  - Image responses carry an `ETag`; repeat requests can get `304 Not Modified`.
 
 ## Additional Endpoints
 

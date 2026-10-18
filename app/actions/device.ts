@@ -1,8 +1,11 @@
 "use server";
 
+import type { ExpressionBuilder } from "kysely";
 import { BYOS_MONO_USER_ID, getCurrentUserId } from "@/lib/auth/get-user";
 import { db } from "@/lib/database/db";
-import { mapDeviceRow } from "@/lib/database/mappers";
+import type { DB } from "@/lib/database/db.d";
+import { containsPattern } from "@/lib/database/like";
+import { mapDeviceRow, mapLogRow } from "@/lib/database/mappers";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import {
@@ -15,7 +18,12 @@ import {
 import {
 	hashClaimCode,
 	normalizeClaimCode,
+	pendingClaimCutoff,
 } from "@/lib/device/pending-device-claims";
+import {
+	describeValidationError,
+	deviceUpdateSchema,
+} from "@/lib/device/update-schema";
 import type { Device, Log } from "@/lib/types";
 import { generateFriendlyId, generateMockMacAddress } from "@/utils/helpers";
 
@@ -47,36 +55,6 @@ export async function fetchDeviceByFriendlyId(
 	return mapDeviceRow(device);
 }
 
-/**
- * Fetch logs for a specific device
- */
-export async function fetchDeviceLogs(friendlyId: string): Promise<Log[]> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return [];
-	}
-
-	const visibleDeviceIds = await getVisibleDeviceFriendlyIds(friendlyId);
-	if (visibleDeviceIds.length === 0) {
-		return [];
-	}
-
-	const logs = await db
-		.selectFrom("logs")
-		.selectAll()
-		.where("friendly_id", "in", visibleDeviceIds)
-		.orderBy("created_at", "desc")
-		.limit(50)
-		.execute();
-
-	return logs as unknown as Log[];
-}
-
-/**
- * Fetch device logs with pagination and filtering
- */
 export type FetchDeviceLogsParams = {
 	page: number;
 	perPage: number;
@@ -105,6 +83,38 @@ async function getVisibleDeviceFriendlyIds(
 	return devices.map((device) => device.friendly_id);
 }
 
+/** Classify a device log entry by keywords (the payload is free-form text). */
+function logType(logData: string): "error" | "warning" | "info" {
+	const text = logData.toLowerCase();
+	if (text.includes("error") || text.includes("fail")) return "error";
+	if (text.includes("warn")) return "warning";
+	return "info";
+}
+
+function deviceLogFilters(
+	eb: ExpressionBuilder<DB, "logs">,
+	friendlyIds: string[],
+	search?: string,
+	type?: string,
+) {
+	const isError = eb.or([
+		eb("log_data", "ilike", "%error%"),
+		eb("log_data", "ilike", "%fail%"),
+	]);
+	const isWarning = eb("log_data", "ilike", "%warn%");
+	const conditions = [eb("friendly_id", "in", friendlyIds)];
+	if (search) conditions.push(eb("log_data", "ilike", containsPattern(search)));
+	if (type === "error") conditions.push(isError);
+	else if (type === "warning") conditions.push(isWarning);
+	else if (type === "info")
+		conditions.push(eb.and([eb.not(isError), eb.not(isWarning)]));
+	return eb.and(conditions);
+}
+
+/**
+ * Fetch device logs with pagination and filtering. Logs are not under RLS;
+ * visibility comes from the caller's (RLS-scoped) devices.
+ */
 export async function fetchDeviceLogsWithFilters({
 	page,
 	perPage,
@@ -119,125 +129,43 @@ export async function fetchDeviceLogsWithFilters({
 		return { logs: [], total: 0, uniqueTypes: [] };
 	}
 
-	// Calculate pagination
-	const offset = (page - 1) * perPage;
 	const visibleDeviceIds = await getVisibleDeviceFriendlyIds(friendlyId);
-
 	if (visibleDeviceIds.length === 0) {
 		return { logs: [], total: 0, uniqueTypes: [] };
 	}
 
-	// Start building the query
-	let query = db
-		.selectFrom("logs")
-		.selectAll()
-		.where("friendly_id", "in", visibleDeviceIds);
+	const limit = Math.min(200, Math.max(1, Math.trunc(perPage) || 1));
+	const offset = (Math.max(1, Math.trunc(page) || 1) - 1) * limit;
+	const [logs, countResult] = await Promise.all([
+		db
+			.selectFrom("logs")
+			.selectAll()
+			.where((eb) => deviceLogFilters(eb, visibleDeviceIds, search, type))
+			.orderBy("created_at", "desc")
+			.limit(limit)
+			.offset(offset)
+			.execute(),
+		db
+			.selectFrom("logs")
+			.select((eb) => eb.fn.countAll().as("count"))
+			.where((eb) => deviceLogFilters(eb, visibleDeviceIds, search, type))
+			.executeTakeFirst(),
+	]);
 
-	if (search) {
-		query = query.where("log_data", "ilike", `%${search}%`);
-	}
-	if (type && type !== "all") {
-		if (type === "error") {
-			query = query.where((eb) =>
-				eb.or([
-					eb("log_data", "ilike", "%error%"),
-					eb("log_data", "ilike", "%fail%"),
-				]),
-			);
-		} else if (type === "warning") {
-			query = query.where("log_data", "ilike", "%warn%");
-		} else if (type === "info") {
-			query = query.where((eb) =>
-				eb.and([
-					eb.not(
-						eb.or([
-							eb("log_data", "ilike", "%error%"),
-							eb("log_data", "ilike", "%fail%"),
-						]),
-					),
-					eb.not(eb("log_data", "ilike", "%warn%")),
-				]),
-			);
-		}
-	}
-
-	// Get paginated results
-	const logs = await query
-		.orderBy("created_at", "desc")
-		.limit(perPage)
-		.offset(offset)
-		.execute();
-
-	// Get total count
-	let countQuery = db
-		.selectFrom("logs")
-		.select((eb) => eb.fn.countAll().as("count"))
-		.where("friendly_id", "in", visibleDeviceIds);
-
-	if (search) {
-		countQuery = countQuery.where("log_data", "ilike", `%${search}%`);
-	}
-	if (type && type !== "all") {
-		if (type === "error") {
-			countQuery = countQuery.where((eb) =>
-				eb.or([
-					eb("log_data", "ilike", "%error%"),
-					eb("log_data", "ilike", "%fail%"),
-				]),
-			);
-		} else if (type === "warning") {
-			countQuery = countQuery.where("log_data", "ilike", "%warn%");
-		} else if (type === "info") {
-			countQuery = countQuery.where((eb) =>
-				eb.and([
-					eb.not(
-						eb.or([
-							eb("log_data", "ilike", "%error%"),
-							eb("log_data", "ilike", "%fail%"),
-						]),
-					),
-					eb.not(eb("log_data", "ilike", "%warn%")),
-				]),
-			);
-		}
-	}
-
-	const countResult = await countQuery.executeTakeFirst();
-
-	// Get unique types for the filter dropdown
-	// We need to fetch all relevant logs or perform a distinct query on the log_data content which might be hard with SQL only if it requires parsing
-	// The original code fetched all logs (with pagination) and then computed uniqueTypes from the returned page.
-	// Wait, the original code: `const { data: logs } = await query...` then `(logs || []).map...`
-	// It only computed unique types from the *current page* of logs. That seems correct to replicate.
-
-	const logsData = logs as unknown as Log[];
-
-	const uniqueTypes = Array.from(
-		new Set(
-			logsData.map((log) => {
-				const logData = log.log_data.toLowerCase();
-
-				if (logData.includes("error") || logData.includes("fail")) {
-					return "error";
-				}
-				if (logData.includes("warn")) {
-					return "warning";
-				}
-
-				return "info";
-			}),
-		),
-	);
-
+	const logsData = logs.map(mapLogRow);
 	return {
 		logs: logsData,
 		total: Number(countResult?.count || 0),
-		uniqueTypes,
+		// Types present on this page, for the filter dropdown.
+		uniqueTypes: Array.from(
+			new Set(logsData.map((log) => logType(log.log_data))),
+		),
 	};
 }
 
 /**
- * Update a device
+ * Update a device. Input is validated and normalized server-side; RLS limits
+ * the update to the caller's own devices.
  */
 export async function updateDevice(
 	device: Partial<Device> & { id: number },
@@ -249,63 +177,56 @@ export async function updateDevice(
 		return { success: false, error: "Database client not initialized" };
 	}
 
-	// Prepare the update data
-	// We construct object with optional properties explicitly
-	const updateData: Record<string, unknown> = {};
+	const parsed = deviceUpdateSchema.safeParse(device);
+	if (!parsed.success) {
+		return { success: false, error: describeValidationError(parsed.error) };
+	}
+	const { id, refresh_schedule, ...fields } = parsed.data;
 
-	if (device.name !== undefined) updateData.name = device.name;
-	if (device.mac_address !== undefined)
-		updateData.mac_address = device.mac_address;
-	if (device.api_key !== undefined) updateData.api_key = device.api_key;
-	if (device.friendly_id !== undefined)
-		updateData.friendly_id = device.friendly_id;
-	if (device.timezone !== undefined) updateData.timezone = device.timezone;
-	if (device.refresh_schedule !== undefined)
-		updateData.refresh_schedule = device.refresh_schedule
-			? JSON.stringify(device.refresh_schedule)
+	const updateData: Record<string, unknown> = {
+		...Object.fromEntries(
+			Object.entries(fields).filter(([, value]) => value !== undefined),
+		),
+		updated_at: new Date().toISOString(),
+	};
+	if (refresh_schedule !== undefined) {
+		updateData.refresh_schedule = refresh_schedule
+			? serializeRefreshSchedule(refresh_schedule)
 			: null;
-	if (device.screen !== undefined) updateData.screen = device.screen;
-	if (device.playlist_id !== undefined)
-		updateData.playlist_id = device.playlist_id;
-	if (device.mixup_id !== undefined) updateData.mixup_id = device.mixup_id;
-	if (device.display_mode !== undefined)
-		updateData.display_mode = device.display_mode;
-	if (device.battery_voltage !== undefined)
-		updateData.battery_voltage = device.battery_voltage;
-	if (device.firmware_version !== undefined)
-		updateData.firmware_version = device.firmware_version;
-	if (device.rssi !== undefined) updateData.rssi = device.rssi;
-	if (device.screen_width !== undefined)
-		updateData.screen_width = device.screen_width;
-	if (device.screen_height !== undefined)
-		updateData.screen_height = device.screen_height;
-	if (device.screen_orientation !== undefined)
-		updateData.screen_orientation = device.screen_orientation;
-	if (device.model !== undefined) updateData.model = device.model || null;
-	if (device.palette_id !== undefined)
-		updateData.palette_id = device.palette_id || null;
-	if (device.temperature_profile !== undefined)
-		updateData.temperature_profile = device.temperature_profile;
-
-	updateData.updated_at = new Date().toISOString();
+	}
 
 	try {
-		await withUserScope((scopedDb) =>
+		const result = await withUserScope((scopedDb) =>
 			scopedDb
 				.updateTable("devices")
 				.set(updateData)
-				.where("id", "=", String(device.id))
-				.execute(),
+				.where("id", "=", String(id))
+				.executeTakeFirst(),
 		);
+		if (Number(result.numUpdatedRows) === 0) {
+			return { success: false, error: "Device not found" };
+		}
 
 		return { success: true };
 	} catch (error) {
 		console.error("Error updating device:", error);
 		return {
 			success: false,
-			error: error instanceof Error ? error.message : String(error),
+			error: friendlyDatabaseError(error),
 		};
 	}
+}
+
+/** Map constraint violations to messages a user can act on. */
+function friendlyDatabaseError(error: unknown): string {
+	const constraint = (error as { constraint?: string })?.constraint ?? "";
+	if (constraint.includes("api_key"))
+		return "Another device already uses this API key";
+	if (constraint.includes("mac_address"))
+		return "Another device already uses this MAC address";
+	if (constraint.includes("friendly_id"))
+		return "Another device already uses this friendly ID";
+	return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -428,6 +349,7 @@ export async function claimDeviceByCode(input: {
 			const pendingClaim = await trx
 				.deleteFrom("pending_device_claims")
 				.where("claim_hash", "=", claimHash)
+				.where("last_seen_at", ">", pendingClaimCutoff())
 				.returningAll()
 				.executeTakeFirst();
 

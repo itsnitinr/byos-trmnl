@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { admin } from "better-auth/plugins";
-import { Pool } from "pg";
+import { pool } from "@/lib/database/db";
 import { sendEmail } from "@/lib/email";
 import { getAppBaseUrl } from "../utils";
 
@@ -16,10 +16,6 @@ function createAuth() {
 	if (!AUTH_ENABLED) {
 		return null;
 	}
-
-	const pool = new Pool({
-		connectionString: process.env.DATABASE_URL,
-	});
 
 	async function promoteFirstRealUserToAdmin(userId: string) {
 		const client = await pool.connect();
@@ -54,6 +50,7 @@ function createAuth() {
 
 	return betterAuth({
 		baseURL: getAppBaseUrl().origin,
+		// The app pool: one set of connections and one TLS configuration.
 		database: pool,
 		emailAndPassword: {
 			enabled: true,

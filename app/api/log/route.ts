@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/database/db";
 import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import { DEVICE_SETUP_REFRESH_SECONDS } from "@/lib/device/defaults";
 import { isRecord, stringifyLogValue } from "@/lib/device/log-values";
-import { resolveUserIdFromApiKey } from "@/lib/device/request-headers";
+import { findDeviceByApiKey } from "@/lib/device/lookup";
 import { logError, logInfo } from "@/lib/logger";
+import { ByteLimitError, readJsonBody } from "@/lib/network/response-bytes";
+
+/**
+ * POST /api/log — firmware uploads buffered log entries (`{ logs: [...] }`).
+ *
+ * Bodies are bounded: firmware sends a handful of entries, so anything large is
+ * either a bug or abuse and must not be buffered or stored.
+ */
+export const MAX_LOG_BODY_BYTES = 256 * 1024;
+export const MAX_LOG_ENTRIES = 200;
 
 interface LogEntry {
 	creation_timestamp: number;
@@ -18,12 +27,6 @@ interface LogEntry {
 }
 
 type NormalizedLogEntry = LogEntry & Record<string, unknown>;
-
-type LogData = {
-	logs_array: NormalizedLogEntry[];
-	device_id?: string;
-	timestamp?: string;
-};
 
 function parseLogEntries(body: unknown): unknown[] | null {
 	if (!isRecord(body) || !Array.isArray(body.logs)) {
@@ -68,131 +71,17 @@ function normalizeIncomingLog(log: unknown): NormalizedLogEntry {
 }
 
 function parseRefreshRateHeader(refreshRate: string | null): number {
-	const parsed = refreshRate ? Number.parseInt(refreshRate, 10) : NaN;
+	const parsed = refreshRate ? Number.parseInt(refreshRate, 10) : Number.NaN;
 	return Number.isFinite(parsed) && parsed > 0
 		? parsed
 		: DEVICE_SETUP_REFRESH_SECONDS;
 }
 
-function nextExpectedUpdateFromRefresh(refreshRate: string | null): string {
-	return new Date(
-		Date.now() + parseRefreshRateHeader(refreshRate) * 1000,
-	).toISOString();
+function finiteOr<T>(value: number, fallback: T): number | T {
+	return Number.isFinite(value) ? value : fallback;
 }
 
-type DeviceMetricsSnapshot = {
-	battery_voltage: number | string | null;
-	firmware_version: string | null;
-	rssi: number | null;
-};
-
-async function updateLogDeviceMetrics({
-	scopedDb,
-	deviceId,
-	current,
-	refreshRate,
-	batteryVoltage,
-	fwVersion,
-	rssi,
-	errorMessage = "Error updating device metrics",
-	metadata = {},
-}: {
-	scopedDb: typeof db;
-	deviceId: string;
-	current: DeviceMetricsSnapshot;
-	refreshRate: string | null;
-	batteryVoltage: string | null;
-	fwVersion: string | null;
-	rssi: string | null;
-	errorMessage?: string;
-	metadata?: Record<string, unknown>;
-}) {
-	try {
-		await scopedDb
-			.updateTable("devices")
-			.set({
-				last_update_time: new Date().toISOString(),
-				next_expected_update: nextExpectedUpdateFromRefresh(refreshRate),
-				battery_voltage: batteryVoltage
-					? Number.parseFloat(batteryVoltage)
-					: current.battery_voltage,
-				firmware_version: fwVersion || current.firmware_version,
-				rssi: rssi ? Number.parseInt(rssi, 10) : current.rssi,
-				updated_at: new Date().toISOString(),
-			})
-			.where("friendly_id", "=", deviceId)
-			.execute();
-	} catch (error) {
-		logError(new Error(errorMessage), {
-			source: "api/log",
-			metadata: {
-				device_id: deviceId,
-				error,
-				...metadata,
-			},
-		});
-	}
-}
-
-async function updateLogDeviceMacAddress({
-	scopedDb,
-	deviceId,
-	macAddress,
-	successMessage,
-	errorMessage = "Error updating MAC address for device",
-	metadata = {},
-}: {
-	scopedDb: typeof db;
-	deviceId: string;
-	macAddress: string;
-	successMessage: string;
-	errorMessage?: string;
-	metadata?: Record<string, unknown>;
-}) {
-	try {
-		await scopedDb
-			.updateTable("devices")
-			.set({
-				mac_address: macAddress,
-				updated_at: new Date().toISOString(),
-			})
-			.where("friendly_id", "=", deviceId)
-			.execute();
-
-		logInfo(successMessage, {
-			source: "api/log",
-			metadata: {
-				device_id: deviceId,
-				mac_address: macAddress,
-				...metadata,
-			},
-		});
-	} catch (error) {
-		logError(new Error(errorMessage), {
-			source: "api/log",
-			metadata: {
-				device_id: deviceId,
-				mac_address: macAddress,
-				error,
-				...metadata,
-			},
-		});
-	}
-}
-
-export async function GET(request: Request) {
-	logInfo("Log API GET Request received (unexpected)", {
-		source: "api/log",
-		metadata: {
-			url: request.url,
-			method: request.method,
-			path: new URL(request.url).pathname,
-			search: new URL(request.url).search,
-			origin: new URL(request.url).origin,
-		},
-	});
-
-	// Simply return 404 for GET requests
+export async function GET() {
 	return NextResponse.json(
 		{
 			status: 404,
@@ -203,66 +92,54 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-	// Log request details
-	logInfo("Log API Request", {
-		source: "api/log",
-		metadata: {
-			url: request.url,
-			method: request.method,
-			path: new URL(request.url).pathname,
-			search: new URL(request.url).search,
-			origin: new URL(request.url).origin,
-		},
-	});
+	const macAddress = request.headers.get("ID")?.toUpperCase();
+	const apiKey = request.headers.get("Access-Token");
+
+	// TRMNL API requires Access-Token header
+	if (!apiKey) {
+		return NextResponse.json(
+			{
+				error: "Access-Token header is required",
+			},
+			{ status: 401 },
+		);
+	}
+
+	let body: unknown;
+	try {
+		body = await readJsonBody(request, MAX_LOG_BODY_BYTES);
+	} catch (error) {
+		if (error instanceof ByteLimitError) {
+			return NextResponse.json(
+				{ error: `Log body exceeds ${MAX_LOG_BODY_BYTES} bytes` },
+				{ status: 413 },
+			);
+		}
+		return NextResponse.json(
+			{ error: "Request body must be valid JSON" },
+			{ status: 422 },
+		);
+	}
+
+	const logsArray = parseLogEntries(body);
+	if (!logsArray) {
+		return NextResponse.json(
+			{
+				error: "Invalid request body. Expected { 'logs': [] }",
+			},
+			{ status: 422 },
+		);
+	}
+
+	const refreshRate = request.headers.get("Refresh-Rate");
+	const batteryVoltage = request.headers.get("Battery-Voltage");
+	const fwVersion = request.headers.get("FW-Version");
+	const rssi = request.headers.get("RSSI");
 
 	try {
-		const macAddress = request.headers.get("ID")?.toUpperCase();
-		const apiKey = request.headers.get("Access-Token");
-
-		// TRMNL API requires Access-Token header
-		if (!apiKey) {
-			return NextResponse.json(
-				{
-					error: "Access-Token header is required",
-				},
-				{ status: 401 },
-			);
-		}
-
-		const logsArray = parseLogEntries(await request.json());
-		if (!logsArray) {
-			return NextResponse.json(
-				{
-					error: "Invalid request body. Expected { 'logs': [] }",
-				},
-				{ status: 422 },
-			);
-		}
-
-		const refreshRate = request.headers.get("Refresh-Rate");
-		const batteryVoltage = request.headers.get("Battery-Voltage");
-		const fwVersion = request.headers.get("FW-Version");
-		const rssi = request.headers.get("RSSI");
 		const { ready } = await checkDbConnection();
-
 		if (!ready) {
-			console.warn(
-				"Database client not initialized, using noDB mode, skipping log processing",
-			);
-			logInfo(
-				"Database client not initialized, using noDB mode, skipping log processing",
-				{
-					source: "api/log",
-					metadata: {
-						macAddress: macAddress || null,
-						hasApiKey: Boolean(apiKey),
-						refreshRate: refreshRate || null,
-						batteryVoltage: batteryVoltage || null,
-						fwVersion: fwVersion || null,
-						rssi: rssi || null,
-					},
-				},
-			);
+			console.warn("Database not available, skipping device log upload");
 			return NextResponse.json(
 				{
 					status: 503,
@@ -272,10 +149,8 @@ export async function POST(request: Request) {
 			);
 		}
 
-		const currentUserId = await resolveUserIdFromApiKey(apiKey, {
-			assumeDbReady: true,
-		});
-		if (!currentUserId) {
+		const device = await findDeviceByApiKey(apiKey);
+		if (!device?.user_id) {
 			logError("Refusing logs for device without an owner", {
 				source: "api/log",
 				metadata: { macAddress, hasApiKey: true },
@@ -289,24 +164,22 @@ export async function POST(request: Request) {
 			);
 		}
 
-		return await withExplicitUserScope(currentUserId, async (scopedDb) => {
-			const device = await scopedDb
-				.selectFrom("devices")
-				.selectAll()
-				.where("api_key", "=", apiKey)
-				.executeTakeFirst();
+		return await withExplicitUserScope(device.user_id, async (scopedDb) => {
+			const update: Record<string, unknown> = {
+				last_update_time: new Date().toISOString(),
+				next_expected_update: new Date(
+					Date.now() + parseRefreshRateHeader(refreshRate) * 1000,
+				).toISOString(),
+				battery_voltage: batteryVoltage
+					? finiteOr(Number.parseFloat(batteryVoltage), device.battery_voltage)
+					: device.battery_voltage,
+				firmware_version: fwVersion || device.firmware_version,
+				rssi: rssi
+					? finiteOr(Number.parseInt(rssi, 10), device.rssi)
+					: device.rssi,
+				updated_at: new Date().toISOString(),
+			};
 
-			if (!device) {
-				return NextResponse.json(
-					{
-						status: 400,
-						message: "Device owner is required before logs can be accepted",
-					},
-					{ status: 400 },
-				);
-			}
-
-			const deviceStatus = "known";
 			if (macAddress && macAddress !== device.mac_address) {
 				const existingDeviceWithMac = await scopedDb
 					.selectFrom("devices")
@@ -335,27 +208,36 @@ export async function POST(request: Request) {
 						{ status: 409 },
 					);
 				}
-
-				await updateLogDeviceMacAddress({
-					scopedDb,
-					deviceId: device.friendly_id,
-					macAddress,
-					successMessage: "Updated device with MAC address",
-				});
+				update.mac_address = macAddress;
 			}
 
-			await updateLogDeviceMetrics({
-				scopedDb,
-				deviceId: device.friendly_id,
-				current: device,
-				refreshRate,
-				batteryVoltage,
-				fwVersion,
-				rssi,
-			});
+			// Telemetry is best effort; the log upload itself is what must succeed.
+			const writeMetrics = (values: Record<string, unknown>) =>
+				scopedDb
+					.updateTable("devices")
+					.set(values)
+					.where("id", "=", String(device.id))
+					.execute();
+			try {
+				await writeMetrics(update);
+			} catch (error) {
+				logError("Error updating device metrics", {
+					source: "api/log",
+					metadata: { device_id: device.friendly_id, error },
+				});
+				// A MAC taken by a device this owner cannot see must not cost the
+				// telemetry as well.
+				if (update.mac_address) {
+					const { mac_address: _mac, ...metrics } = update;
+					await writeMetrics(metrics).catch(() => undefined);
+				}
+			}
 
-			const logData: LogData = {
-				logs_array: logsArray.map(normalizeIncomingLog),
+			// Keep the newest entries if a device sends an oversized batch.
+			const dropped = Math.max(0, logsArray.length - MAX_LOG_ENTRIES);
+			const logData = {
+				logs_array: logsArray.slice(dropped).map(normalizeIncomingLog),
+				...(dropped > 0 ? { dropped_entries: dropped } : {}),
 			};
 
 			try {
@@ -367,19 +249,10 @@ export async function POST(request: Request) {
 					})
 					.execute();
 			} catch (error) {
-				logError(new Error("Error inserting log with device ID"), {
+				logError("Error inserting device logs", {
 					source: "api/log",
-					metadata: {
-						device_id: device.friendly_id,
-						error,
-						refresh_rate: refreshRate,
-						battery_voltage: batteryVoltage,
-						fw_version: fwVersion,
-						rssi,
-						device_status: deviceStatus,
-					},
+					metadata: { device_id: device.friendly_id, error },
 				});
-
 				return NextResponse.json(
 					{
 						status: 500,
@@ -389,24 +262,22 @@ export async function POST(request: Request) {
 				);
 			}
 
-			logInfo("Log saved successfully", {
+			logInfo("Device logs saved", {
 				source: "api/log",
 				metadata: {
 					device_id: device.friendly_id,
 					logs_count: logsArray.length,
-					refresh_rate: refreshRate,
+					dropped_entries: dropped,
 					battery_voltage: batteryVoltage,
 					fw_version: fwVersion,
 					rssi,
-					device_status: deviceStatus,
 				},
 			});
 
 			return new NextResponse(null, { status: 204 });
 		});
 	} catch (error) {
-		// The error object already contains the stack trace
-		logError(error as Error, {
+		logError(error instanceof Error ? error : new Error(String(error)), {
 			source: "api/log",
 		});
 		return NextResponse.json(

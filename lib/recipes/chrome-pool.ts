@@ -125,21 +125,18 @@ async function closeAll(): Promise<void> {
 	}
 }
 
-// Register shutdown hooks exactly once per process.
+// Register shutdown hooks exactly once per process. They only release the
+// browsers: Next.js owns the signal and exits after draining in-flight
+// requests, so calling process.exit() here would cut those requests off.
 let hooksAttached = false;
 function attachShutdownHooks(): void {
 	if (hooksAttached) return;
 	hooksAttached = true;
-	process.once("exit", () => {
+	process.once("SIGINT", () => {
 		void closeAll();
 	});
-	process.once("SIGINT", async () => {
-		await closeAll();
-		process.exit(0);
-	});
-	process.once("SIGTERM", async () => {
-		await closeAll();
-		process.exit(0);
+	process.once("SIGTERM", () => {
+		void closeAll();
 	});
 }
 attachShutdownHooks();

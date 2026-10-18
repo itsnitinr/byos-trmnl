@@ -1,6 +1,7 @@
-import { Liquid } from "liquidjs";
 import { proxyToTRMNL } from "@/lib/api/proxy";
+import { ByteLimitError, readJsonBody } from "@/lib/network/response-bytes";
 import {
+	createLiquidEngine,
 	registerCustomFilters,
 	removeCosmeticParens,
 	wrapNonLiquidScripts,
@@ -19,16 +20,34 @@ import { isProxyLive } from "@/lib/trmnl/registry";
  *   - TRMNL_PROXY_LIVE=true is set, or
  *   - the request body shape isn't recognized (no `markup` string).
  */
+/** Templates are capped at 2M characters by the Liquid engine; allow some JSON overhead. */
+const MAX_MARKUP_BODY_BYTES = 3 * 1024 * 1024;
+
 export async function POST(request: Request) {
 	if (isProxyLive()) {
-		const body = await request.json().catch(() => ({}));
+		const body = await readJsonBody(request, MAX_MARKUP_BODY_BYTES).catch(
+			() => ({}),
+		);
 		return proxyToTRMNL("/api/markup", "POST", cloneRequest(request), { body });
 	}
 
 	let body: Record<string, unknown>;
 	try {
-		body = (await request.json()) as Record<string, unknown>;
-	} catch {
+		const parsed = await readJsonBody(request, MAX_MARKUP_BODY_BYTES);
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			return Response.json(
+				{ error: "Body must be a JSON object" },
+				{ status: 400 },
+			);
+		}
+		body = parsed as Record<string, unknown>;
+	} catch (error) {
+		if (error instanceof ByteLimitError) {
+			return Response.json(
+				{ error: `Request body exceeds ${MAX_MARKUP_BODY_BYTES} bytes` },
+				{ status: 413 },
+			);
+		}
 		return Response.json({ error: "Invalid JSON body" }, { status: 400 });
 	}
 
@@ -42,10 +61,7 @@ export async function POST(request: Request) {
 			? (body.variables as Record<string, unknown>)
 			: {};
 
-	const engine = new Liquid({
-		strictFilters: false,
-		strictVariables: false,
-	});
+	const engine = createLiquidEngine();
 	registerCustomFilters(engine);
 
 	try {

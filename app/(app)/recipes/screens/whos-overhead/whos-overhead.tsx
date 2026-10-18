@@ -530,6 +530,7 @@ export const definition: RecipeDefinition<
 		tags: ["aviation", "flights", "live", "location"],
 		published: true,
 		version: "1.1.0",
+		dataRefreshSeconds: 30,
 	},
 	paramsSchema,
 	dataSchema,

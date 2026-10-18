@@ -7,6 +7,11 @@
  * the same way.
  */
 
+import {
+	ByteLimitError,
+	readJsonBody,
+	readResponseBytes,
+} from "@/lib/network/response-bytes";
 import { isJsonObject } from "@/lib/trmnl/plugin-settings";
 
 export const CANONICAL_MARKUP_SIZES = [
@@ -60,6 +65,40 @@ export const MAX_ARCHIVE_BYTES = 256 * 1024;
  * `Content-Length` can be missing or wrong, so this is a fast-path reject;
  * the post-parse byte check is still the source of truth.
  */
+/**
+ * Largest JSON body any plugin-settings route accepts. Individual fields have
+ * tighter limits (markup, merge variables), checked after parsing.
+ */
+export const MAX_JSON_BODY_BYTES = 1024 * 1024;
+
+/** Allowance for multipart boundaries and part headers around the payload. */
+const MULTIPART_OVERHEAD_BYTES = 16 * 1024;
+
+/**
+ * Parse multipart form data from a body of at most `maxPayloadBytes` (plus
+ * envelope), reading it incrementally so chunked uploads cannot bypass the
+ * limit the way they bypass a Content-Length check.
+ */
+export async function readBoundedFormData(
+	request: Request,
+	maxPayloadBytes: number,
+): Promise<FormData | Response> {
+	try {
+		const bytes = await readResponseBytes(
+			request,
+			maxPayloadBytes + MULTIPART_OVERHEAD_BYTES,
+		);
+		return await new Response(new Uint8Array(bytes), {
+			headers: { "content-type": request.headers.get("content-type") ?? "" },
+		}).formData();
+	} catch (error) {
+		if (error instanceof ByteLimitError) {
+			return jsonError(`Request body exceeds ${maxPayloadBytes} bytes`);
+		}
+		return jsonError("Invalid multipart form data");
+	}
+}
+
 export function rejectOversizedRequest(
 	request: Request,
 	maxBytes: number,
@@ -92,11 +131,16 @@ export function jsonError(error: string): Response {
  */
 export async function parseJsonObjectBody(
 	request: Request,
+	maxBytes = MAX_JSON_BODY_BYTES,
 ): Promise<Record<string, unknown> | Response> {
 	let parsed: unknown;
 	try {
-		parsed = await request.json();
-	} catch {
+		// Bounded read: Content-Length checks alone miss chunked uploads.
+		parsed = await readJsonBody(request, maxBytes);
+	} catch (error) {
+		if (error instanceof ByteLimitError) {
+			return jsonError(`Request body exceeds ${maxBytes} bytes`);
+		}
 		return jsonError("Invalid JSON body");
 	}
 	if (!isJsonObject(parsed)) {

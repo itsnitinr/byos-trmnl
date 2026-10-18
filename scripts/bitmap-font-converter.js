@@ -171,7 +171,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 Bitmap Font Converter - Convert 8x8 bitmaps to 7x8 by removing the rightmost column
 
 Usage:
-  node bitmap-font-converter.js [options]
+  node scripts/bitmap-font-converter.js [options]
 
 Options:
   --input <file>    Input JSON file (default: components/bitmap-font/bitmap-font.json)
@@ -181,13 +181,13 @@ Options:
   
 Examples:
   # Add a new 7x8 font to the output file
-  node bitmap-font-converter.js
+  node scripts/bitmap-font-converter.js
   
   # Replace the 8x8 font with a 7x8 font
-  node bitmap-font-converter.js --replace
+  node scripts/bitmap-font-converter.js --replace
   
   # Specify custom input and output files
-  node bitmap-font-converter.js --input ./my-font.json --output ./modified-font.json
+  node scripts/bitmap-font-converter.js --input ./my-font.json --output ./modified-font.json
   `);
 } else {
 	main();

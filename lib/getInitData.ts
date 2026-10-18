@@ -1,6 +1,12 @@
 import { cache } from "react";
 import { canReadSystemLogs } from "@/app/actions/system";
-import { mapDeviceRows } from "@/lib/database/mappers";
+import {
+	mapDeviceRows,
+	mapMixupRow,
+	mapPlaylistItemRow,
+	mapPlaylistRow,
+	mapSystemLogRow,
+} from "@/lib/database/mappers";
 import { withUserScope } from "@/lib/database/scoped-db";
 import { getDbStatus } from "@/lib/database/utils";
 import type {
@@ -18,8 +24,6 @@ export type InitialData = {
 	playlistItems: PlaylistItem[];
 	mixups: Mixup[];
 	systemLogs: SystemLog[];
-	uniqueSources: string[];
-	totalLogs: number;
 	dbStatus: {
 		ready: boolean;
 		error?: string;
@@ -48,8 +52,6 @@ export const getInitData = cache(async (): Promise<InitialData> => {
 	// Default empty values if DB is not ready
 	let devices: Device[] = [];
 	let systemLogs: SystemLog[] = [];
-	let uniqueSources: string[] = [];
-	let totalLogs = 0;
 	let playlists: Playlist[] = [];
 	let playlistItems: PlaylistItem[] = [];
 	let mixups: Mixup[] = [];
@@ -65,8 +67,6 @@ export const getInitData = cache(async (): Promise<InitialData> => {
 				playlistItemsResult,
 				mixupsResult,
 				logsResult,
-				sourcesResult,
-				logsCountResult,
 			] = await withUserScope((scopedDb) =>
 				Promise.all([
 					// Fetch devices (RLS filters by user)
@@ -86,7 +86,7 @@ export const getInitData = cache(async (): Promise<InitialData> => {
 						.selectAll()
 						.orderBy("created_at", "desc")
 						.execute(),
-					// Fetch recent logs (no RLS - shared)
+					// Recent system logs for the dashboard (admin only; not tenant data)
 					includeSystemLogs
 						? scopedDb
 								.selectFrom("system_logs")
@@ -95,36 +95,14 @@ export const getInitData = cache(async (): Promise<InitialData> => {
 								.limit(5)
 								.execute()
 						: Promise.resolve([]),
-					// Fetch unique sources for filters
-					includeSystemLogs
-						? scopedDb
-								.selectFrom("system_logs")
-								.select("source")
-								.distinct()
-								.orderBy("source")
-								.execute()
-						: Promise.resolve([]),
-					// Get total logs count
-					includeSystemLogs
-						? scopedDb
-								.selectFrom("system_logs")
-								.select((eb) => eb.fn.countAll().as("count"))
-								.executeTakeFirst()
-						: Promise.resolve({ count: 0 }),
 				]),
 			);
 
 			devices = mapDeviceRows(devicesResult);
-			playlists = playlistsResult as unknown as Playlist[];
-			playlistItems = playlistItemsResult as unknown as PlaylistItem[];
-			mixups = mixupsResult as unknown as Mixup[];
-			systemLogs = logsResult as unknown as SystemLog[];
-			uniqueSources = Array.from(
-				new Set(
-					sourcesResult.map((item) => item.source).filter(Boolean) as string[],
-				),
-			);
-			totalLogs = Number(logsCountResult?.count || 0);
+			playlists = playlistsResult.map(mapPlaylistRow);
+			playlistItems = playlistItemsResult.map(mapPlaylistItemRow);
+			mixups = mixupsResult.map(mapMixupRow);
+			systemLogs = logsResult.map(mapSystemLogRow);
 		} catch (error) {
 			console.error("Error fetching initial data:", error);
 		}
@@ -136,47 +114,6 @@ export const getInitData = cache(async (): Promise<InitialData> => {
 		playlistItems,
 		mixups,
 		systemLogs,
-		uniqueSources,
-		totalLogs,
 		dbStatus,
 	};
 });
-
-/**
- * Cached function to get just devices data.
- * This is an optimized subset of getInitData() that only returns device information.
- *
- * @returns Promise<Device[]> Array of devices
- */
-export const getDevices = cache(async (): Promise<Device[]> => {
-	// Re-use the full data fetch to maintain cache coherence
-	const data = await getInitData();
-	return data.devices;
-});
-
-/**
- * Preload function for the dashboard data.
- * Call this function in server components to start loading data
- * before it's actually needed, improving perceived performance.
- */
-export function preloadDashboard() {
-	void getInitData();
-}
-
-/**
- * Preload function for system logs data.
- * Call this function in server components to start loading data
- * before it's actually needed, improving perceived performance.
- */
-export function preloadSystemLogs() {
-	void getInitData();
-}
-
-/**
- * Preload function for devices data.
- * Call this function in server components to start loading data
- * before it's actually needed, improving perceived performance.
- */
-export function preloadDevices() {
-	void getDevices();
-}

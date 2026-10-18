@@ -59,3 +59,28 @@ describe("POST /api/log", () => {
 		expect(selectFrom).not.toHaveBeenCalled();
 	});
 });
+
+describe("POST /api/log body limits", () => {
+	it("rejects oversized bodies with 413", async () => {
+		const response = await POST(
+			new Request("http://localhost/api/log", {
+				method: "POST",
+				headers: { "Access-Token": "api-key" },
+				body: JSON.stringify({ logs: ["x".repeat(300 * 1024)] }),
+			}),
+		);
+		expect(response.status).toBe(413);
+		expect(selectFrom).not.toHaveBeenCalled();
+	});
+
+	it("answers invalid JSON with 422 instead of a server error", async () => {
+		const response = await POST(
+			new Request("http://localhost/api/log", {
+				method: "POST",
+				headers: { "Access-Token": "api-key" },
+				body: "{not json",
+			}),
+		);
+		expect(response.status).toBe(422);
+	});
+});

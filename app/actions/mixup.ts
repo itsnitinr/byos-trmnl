@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUserId } from "@/lib/auth/get-user";
 import type { MixupLayoutId as DbMixupLayoutId } from "@/lib/database/db.d";
+import { mapMixupRow, mapMixupSlotRow } from "@/lib/database/mappers";
 import {
 	withUserScope,
 	withUserScopeTransaction,
@@ -29,7 +30,7 @@ export async function fetchMixups(): Promise<Mixup[]> {
 			.execute(),
 	);
 
-	return mixups as unknown as Mixup[];
+	return mixups.map(mapMixupRow);
 }
 
 /**
@@ -74,90 +75,9 @@ export async function fetchMixupWithSlots(mixupId: string): Promise<{
 	}
 
 	return {
-		mixup: mixup as unknown as Mixup,
-		slots: slots as unknown as MixupSlot[],
+		mixup: mapMixupRow(mixup),
+		slots: slots.map(mapMixupSlotRow),
 	};
-}
-
-/**
- * Create a new mixup
- */
-export async function createMixup(
-	name: string,
-	layoutId: string,
-): Promise<{
-	success: boolean;
-	mixup?: Mixup;
-	error?: string;
-}> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	const userId = await getCurrentUserId();
-
-	try {
-		const mixup = await withUserScope((scopedDb) =>
-			scopedDb
-				.insertInto("mixups")
-				.values({
-					name,
-					layout_id: layoutId as DbMixupLayoutId,
-					user_id: userId,
-				})
-				.returningAll()
-				.executeTakeFirst(),
-		);
-
-		return { success: true, mixup: mixup as unknown as Mixup };
-	} catch (error) {
-		console.error("Error creating mixup:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
-}
-
-/**
- * Update a mixup
- */
-export async function updateMixup(
-	mixupId: string,
-	name: string,
-	layoutId: string,
-): Promise<{ success: boolean; error?: string }> {
-	const { ready } = await checkDbConnection();
-
-	if (!ready) {
-		console.warn("Database client not initialized");
-		return { success: false, error: "Database client not initialized" };
-	}
-
-	try {
-		await withUserScope((scopedDb) =>
-			scopedDb
-				.updateTable("mixups")
-				.set({
-					name,
-					layout_id: layoutId as DbMixupLayoutId,
-					updated_at: new Date().toISOString(),
-				})
-				.where("id", "=", mixupId)
-				.execute(),
-		);
-
-		return { success: true };
-	} catch (error) {
-		console.error("Error updating mixup:", error);
-		return {
-			success: false,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	}
 }
 
 /**

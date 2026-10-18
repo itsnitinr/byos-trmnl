@@ -40,6 +40,12 @@ export type RecipeMeta = {
 	updatedAt?: string;
 	renderSettings?: RecipeRenderSettings;
 	/**
+	 * How long fetched data (`getData`) stays fresh, in seconds (default 300).
+	 * Users can override it per recipe. Match it to how often the source
+	 * changes and to the upstream API's rate limits.
+	 */
+	dataRefreshSeconds?: number;
+	/**
 	 * Hides the recipe from the catalog and parameter form. Used for built-ins
 	 * like `not-found` whose props are injected by the runtime, not by users.
 	 */

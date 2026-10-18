@@ -119,6 +119,32 @@ async function fetchLatestFirmware(): Promise<FirmwareRelease | null> {
 }
 
 /**
+ * Whether `/api/display` may offer firmware updates (`FIRMWARE_UPDATES`,
+ * `auto` by default; `off` disables offers entirely).
+ */
+export function firmwareUpdatesEnabled(): boolean {
+	return process.env.FIRMWARE_UPDATES?.toLowerCase() !== "off";
+}
+
+/**
+ * `Model` header values (firmware DEVICE_MODEL) of boards that run the
+ * generic image at `FW<version>.bin`: the TRMNL OG build (env `trmnl`).
+ * Other boards — TRMNL X (`x`), DIY kits (`seeed_esp32s3`, `seeed_esp32c3`,
+ * `xiao_epaper_mini`), Waveshare, 4-colour OG and so on — use different
+ * builds; offering them the OG image fails on every wake.
+ */
+const GENERIC_FIRMWARE_MODELS = new Set(["og"]);
+
+/**
+ * May this device be offered the generic image? Firmware old enough not to
+ * send `Model` predates the other boards, so it is treated as an OG.
+ */
+export function canOfferGenericFirmware(reportedModel: string | null): boolean {
+	if (!reportedModel) return true;
+	return GENERIC_FIRMWARE_MODELS.has(reportedModel.trim().toLowerCase());
+}
+
+/**
  * Clear the firmware cache (useful for testing)
  */
 export function clearFirmwareCache(): void {

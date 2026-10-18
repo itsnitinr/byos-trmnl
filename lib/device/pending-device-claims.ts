@@ -3,6 +3,16 @@ import { sql } from "kysely";
 import { db } from "@/lib/database/db";
 import { resolveModelForStorage } from "@/lib/trmnl/model-storage";
 
+/**
+ * A device refreshes its claim on every wake-up, so only abandoned claims (and
+ * rows created by requests with made-up tokens) age past this.
+ */
+export const PENDING_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function pendingClaimCutoff(now = Date.now()): Date {
+	return new Date(now - PENDING_CLAIM_TTL_MS);
+}
+
 const CLAIM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CLAIM_CODE_LENGTH = 8;
 
@@ -92,4 +102,21 @@ export async function createOrRefreshPendingDeviceClaim(
 		.execute();
 
 	return { claimCode, claimHash };
+}
+
+/** Delete expired claims in bounded batches. Returns the number removed. */
+export async function prunePendingDeviceClaims(): Promise<number> {
+	let removed = 0;
+	for (let batch = 0; batch < 100; batch++) {
+		const result =
+			await sql`DELETE FROM pending_device_claims WHERE claim_hash IN (
+			SELECT claim_hash FROM pending_device_claims
+			WHERE last_seen_at < ${pendingClaimCutoff()}
+			LIMIT 5000
+		)`.execute(db);
+		const count = Number(result.numAffectedRows ?? 0);
+		removed += count;
+		if (count < 5000) break;
+	}
+	return removed;
 }

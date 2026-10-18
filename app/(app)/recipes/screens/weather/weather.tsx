@@ -220,6 +220,7 @@ export const definition: RecipeDefinition<
 		author: { name: "rbouteiller", github: "" },
 		category: "display-components",
 		version: "0.1.0",
+		dataRefreshSeconds: 900,
 		createdAt: "2025-03-01T00:00:00Z",
 		updatedAt: "2025-03-01T00:00:00Z",
 	},

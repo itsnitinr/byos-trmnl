@@ -224,6 +224,7 @@ export const definition: RecipeDefinition<
 		author: { name: "Nitin Ranganath", github: "itsnitinr" },
 		category: "display-components",
 		version: "0.1.0",
+		dataRefreshSeconds: 900,
 		createdAt: "2026-01-29T00:00:00Z",
 		updatedAt: "2026-08-09T00:00:00Z",
 		renderSettings: {

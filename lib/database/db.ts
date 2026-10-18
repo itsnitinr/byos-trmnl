@@ -1,25 +1,25 @@
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";
+import { databasePoolConfig } from "./connection";
 import type { DB } from "./db.d";
 
-// Ensure DATABASE_URL is available
-if (!process.env.DATABASE_URL) {
-	console.warn("DATABASE_URL is not set. Database connection may fail.");
+const state = globalThis as typeof globalThis & { byosDbPool?: Pool };
+
+/**
+ * One pool per process. Dev-mode module reloads would otherwise leak a new
+ * pool (and its connections) on every edit.
+ */
+state.byosDbPool ??= new Pool(databasePoolConfig());
+export const pool = state.byosDbPool;
+
+// Idle clients can error when the server drops them (restart, failover). Without
+// a listener that error is unhandled and takes the process down.
+if (pool.listenerCount("error") === 0) {
+	pool.on("error", (error) => {
+		console.error("[db] Idle client error:", error.message);
+	});
 }
 
-// Create a new Kysely instance with Postgres dialect
 export const db = new Kysely<DB>({
-	dialect: new PostgresDialect({
-		pool: new Pool({
-			connectionString: process.env.DATABASE_URL,
-			connectionTimeoutMillis: 5000,
-			statement_timeout: 10_000,
-			idleTimeoutMillis: 30_000,
-			ssl: process.env.DATABASE_URL?.includes("sslmode=disable")
-				? false
-				: process.env.NODE_ENV === "production"
-					? { rejectUnauthorized: false }
-					: false,
-		}),
-	}),
+	dialect: new PostgresDialect({ pool }),
 });

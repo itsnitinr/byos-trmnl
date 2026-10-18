@@ -1,6 +1,5 @@
 "use server";
 
-import JSZip from "jszip";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUserId } from "@/lib/auth/get-user";
@@ -15,6 +14,15 @@ import {
 	withUserScopeTransaction,
 } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
+import {
+	ByteLimitError,
+	readResponseBytes,
+} from "@/lib/network/response-bytes";
+import {
+	type ExtractedTextFile,
+	extractTextFiles,
+	ZipLimitError,
+} from "@/lib/network/zip";
 
 // Hard limits to prevent resource abuse on hostile ZIPs.
 const MAX_ZIP_BYTES = 20 * 1024 * 1024; // 20 MB
@@ -74,91 +82,44 @@ export async function installCommunityRecipe(
 	const slug = toSlug(entry.name);
 
 	try {
-		// Download the ZIP with a size cap and no redirect chasing.
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 15000);
-		let res: Response;
+		// Download the ZIP with a size cap (streamed, so a missing or false
+		// Content-Length cannot get past it). Redirects are followed: GitHub
+		// archive links redirect to codeload.
+		let archive: Buffer;
 		try {
-			res = await fetch(zipUrl, {
-				signal: controller.signal,
+			const res = await fetch(zipUrl, {
+				signal: AbortSignal.timeout(15000),
 				redirect: "follow",
 			});
-		} finally {
-			clearTimeout(timeout);
-		}
-		if (!res.ok) {
-			return {
-				success: false,
-				error: `Failed to download ZIP: ${res.status}`,
-			};
-		}
-
-		const contentLength = Number(res.headers.get("content-length") ?? "0");
-		if (contentLength > MAX_ZIP_BYTES) {
-			return { success: false, error: "ZIP archive exceeds size limit" };
-		}
-		const buffer = await res.arrayBuffer();
-		if (buffer.byteLength > MAX_ZIP_BYTES) {
-			return { success: false, error: "ZIP archive exceeds size limit" };
+			if (!res.ok) {
+				await res.body?.cancel();
+				return {
+					success: false,
+					error: `Failed to download ZIP: ${res.status}`,
+				};
+			}
+			archive = await readResponseBytes(res, MAX_ZIP_BYTES);
+		} catch (error) {
+			if (error instanceof ByteLimitError) {
+				return { success: false, error: "ZIP archive exceeds size limit" };
+			}
+			throw error;
 		}
 
-		// Extract files
-		const zip = await JSZip.loadAsync(buffer);
-		const entryPath = entry.trmnlp.zip_entry_path ?? "";
-		const prefix = entryPath
-			? entryPath.endsWith("/")
-				? entryPath
-				: `${entryPath}/`
-			: "";
-
-		const files: { filename: string; content: string }[] = [];
-		const filePromises: Promise<void>[] = [];
-		let totalDecompressed = 0;
-		let bombDetected = false;
-
-		zip.forEach((relativePath, file) => {
-			if (file.dir) return;
-			if (prefix && !relativePath.startsWith(prefix)) return;
-
-			const filename = prefix
-				? relativePath.slice(prefix.length)
-				: relativePath;
-			if (!filename) return;
-
-			filePromises.push(
-				file
-					.async("uint8array")
-					.then((data) => {
-						if (bombDetected) return;
-						if (data.byteLength > MAX_FILE_BYTES) {
-							bombDetected = true;
-							return;
-						}
-						totalDecompressed += data.byteLength;
-						if (totalDecompressed > MAX_DECOMPRESSED_BYTES) {
-							bombDetected = true;
-							return;
-						}
-						// Skip binary files (files containing null bytes)
-						if (data.includes(0)) return;
-						const content = new TextDecoder("utf-8", { fatal: true }).decode(
-							data,
-						);
-						files.push({ filename, content });
-					})
-					.catch(() => {
-						// Skip files that aren't valid UTF-8
-					}),
-			);
-		});
-
-		await Promise.all(filePromises);
-
-		if (bombDetected) {
-			return {
-				success: false,
-				error: "ZIP archive exceeds decompression size limit",
-			};
+		let files: ExtractedTextFile[];
+		try {
+			const entryPath = entry.trmnlp.zip_entry_path ?? "";
+			files = await extractTextFiles(archive, {
+				prefix:
+					entryPath && !entryPath.endsWith("/") ? `${entryPath}/` : entryPath,
+				maxFileBytes: MAX_FILE_BYTES,
+				maxTotalBytes: MAX_DECOMPRESSED_BYTES,
+			});
+		} catch (error) {
+			if (error instanceof ZipLimitError) {
+				return { success: false, error: error.message };
+			}
+			throw error;
 		}
 
 		if (files.length === 0) {

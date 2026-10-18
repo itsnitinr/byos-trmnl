@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
-import { withExplicitUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import {
 	DISPLAY_FALLBACK_REFRESH_SECONDS,
 	normalizeRefreshSchedule,
 } from "@/lib/device/defaults";
-import {
-	parseRequestHeaders,
-	resolveUserIdFromApiKey,
-} from "@/lib/device/request-headers";
+import { findDeviceByApiKey } from "@/lib/device/lookup";
+import { parseRequestHeaders } from "@/lib/device/request-headers";
 import { selectDisplayForDevice } from "@/lib/display/select";
 import { logError, logInfo } from "@/lib/logger";
 import { buildDeviceImageFilename } from "@/lib/render/device-image-url";
-import type { Device } from "@/lib/types";
 
 /**
  * GET /api/display/current
@@ -46,27 +42,14 @@ export async function GET(request: Request) {
 	}
 
 	try {
-		const userId = await resolveUserIdFromApiKey(apiKey, {
-			assumeDbReady: true,
-		});
-		const device = userId
-			? await withExplicitUserScope(userId, (scopedDb) =>
-					scopedDb
-						.selectFrom("devices")
-						.selectAll()
-						.where("api_key", "=", apiKey)
-						.executeTakeFirst(),
-				)
-			: null;
-
-		if (!device) {
+		const deviceData = await findDeviceByApiKey(apiKey);
+		if (!deviceData?.user_id) {
 			return NextResponse.json(
 				{ status: 404, error: "Device not found" },
 				{ status: 404 },
 			);
 		}
 
-		const deviceData = device as unknown as Device;
 		const selection = await selectDisplayForDevice(deviceData, {
 			hostUrl: headers.hostUrl,
 			width: headers.width,

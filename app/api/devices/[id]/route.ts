@@ -5,6 +5,7 @@ import { mapTrmnlDeviceSummary } from "@/lib/database/mappers";
 import { withExplicitUserScope, withUserScope } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
 import { logError, logInfo } from "@/lib/logger";
+import { readJsonBody } from "@/lib/network/response-bytes";
 
 const MINUTE_OF_DAY_MIN = 0;
 const MINUTE_OF_DAY_MAX = 23 * 60 + 59;
@@ -157,7 +158,7 @@ export async function PATCH(
 
 	let body: unknown;
 	try {
-		body = await request.json();
+		body = await readJsonBody(request, 64 * 1024);
 	} catch {
 		return NextResponse.json({ error: "Invalid JSON body" }, { status: 422 });
 	}

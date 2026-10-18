@@ -462,13 +462,20 @@ function HealthChip({ icon, text, label }: HealthItem) {
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
+				{/* Relative times ("in 4m") differ between server render and hydration. */}
 				<span
 					className="flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg border bg-muted/30 px-2 transition-colors hover:bg-muted/60"
 					role="img"
 					aria-label={label}
+					suppressHydrationWarning
 				>
 					{icon}
-					<span className="text-xs font-medium tabular-nums">{text}</span>
+					<span
+						className="text-xs font-medium tabular-nums"
+						suppressHydrationWarning
+					>
+						{text}
+					</span>
 				</span>
 			</TooltipTrigger>
 			<TooltipContent side="top">{label}</TooltipContent>
