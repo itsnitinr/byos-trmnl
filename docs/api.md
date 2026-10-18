@@ -54,6 +54,7 @@ curl -X GET http://<BASE_URL>/api/display \
 {
   "status": 0,
   "image_url": "https://<BASE_URL>/api/bitmap/DEVICE_ID_TIMESTAMP.png",
+  "image_url_timeout": 30,
   "filename": "DEVICE_ID_TIMESTAMP.png",
   "refresh_rate": 180,
   "reset_firmware": false,

@@ -51,7 +51,14 @@ test("single-user mode registers a new device and records telemetry", async () =
 		"FW-Version": "1.6.2",
 	};
 	const first = await display(headers);
-	expect(first).toMatchObject({ status: 0, refresh_rate: 60, image_rotate: 1 });
+	// Default schedule: 60 s, with 3600 s between 00:00 and 07:00 UTC.
+	const sleeping = new Date().getUTCHours() < 7;
+	expect(first).toMatchObject({
+		status: 0,
+		refresh_rate: sleeping ? 3600 : 60,
+		image_url_timeout: 30,
+		image_rotate: 1,
+	});
 	expect(first.image_url).toBe(
 		"http://byos.test/api/bitmap/simple-text.png?width=800&height=480&model=og_png&palette_id=bw",
 	);

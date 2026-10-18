@@ -7,6 +7,13 @@ import { DEVICE_SETUP_REFRESH_SECONDS } from "@/lib/device/defaults";
  * would leave the previous screen up with no explanation.
  */
 
+/**
+ * Seconds the firmware waits for the image download (its default is 15).
+ * Images render on demand, and a cold Liquid/browser render (10 s data
+ * deadline plus page load) can take longer than that.
+ */
+export const IMAGE_URL_TIMEOUT_SECONDS = 30;
+
 export function buildDisplayResponse(
 	imageUrl: string,
 	filename: string,
@@ -17,6 +24,7 @@ export function buildDisplayResponse(
 		{
 			status: 0,
 			image_url: imageUrl,
+			image_url_timeout: IMAGE_URL_TIMEOUT_SECONDS,
 			filename,
 			refresh_rate: refreshRate,
 			reset_firmware: false,
