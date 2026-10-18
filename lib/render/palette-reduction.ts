@@ -137,15 +137,7 @@ export function reduceRgbToPalette(
 		for (let v = 0; v < 256; v++) lut[v] = nearest(v, v, v) & 255;
 		const luma = new Uint8Array(width * height);
 		for (let i = 0, p = 0; p < luma.length; i += 3, p++) luma[p] = data[i];
-		const reduced = floydSteinbergDiffuse(
-			luma,
-			width,
-			height,
-			1,
-			(input, output) => {
-				output[0] = lut[input[0]];
-			},
-		);
+		const reduced = floydSteinbergGrayLut(luma, width, height, lut);
 		const output = new Uint8Array(data.length);
 		for (let i = 0, p = 0; p < reduced.length; i += 3, p++) {
 			output[i] = output[i + 1] = output[i + 2] = reduced[p];
