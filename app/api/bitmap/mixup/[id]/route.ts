@@ -27,6 +27,9 @@ export async function GET(
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const headers = parseRequestHeaders(req);
+	// Known once the request is parsed; lets failures answer at the right size.
+	let errorFrame: { width?: number; height?: number; profile?: DeviceProfile } =
+		{};
 	try {
 		const { id } = await params;
 		const mixupId = stripImageExtension(id);
@@ -42,6 +45,7 @@ export async function GET(
 		const profileHeaders = { ...headers, apiKey: accessToken };
 		const width = imageRequest.width ?? DEFAULT_IMAGE_WIDTH;
 		const height = imageRequest.height ?? DEFAULT_IMAGE_HEIGHT;
+		errorFrame = { width, height };
 		const cookieHeader = req.headers.get("cookie");
 
 		const { ready } = await checkDbConnection();
@@ -98,6 +102,7 @@ export async function GET(
 			modelName: imageRequest.modelName,
 			paletteId: imageRequest.paletteId,
 		});
+		errorFrame = { width, height, profile };
 
 		// Fetch mixup and its slots (join with recipes to get slug)
 		const [mixup, slots] = await withExplicitUserScope(userId, (scopedDb) =>
@@ -164,6 +169,7 @@ export async function GET(
 		const image = await renderErrorImage({
 			message:
 				error instanceof Error ? error.message : "Error generating image",
+			...errorFrame,
 		});
 		return imageResponse(image, 500);
 	}
@@ -180,11 +186,16 @@ async function renderSlot(
 	cookies?: string,
 ): Promise<Buffer | null> {
 	try {
+		// Same screen profile as a full-screen render (UI scale, model CSS), so a
+		// recipe looks the same in a slot as on its own.
 		const renders = await renderRecipeToImage({
 			slug: recipeSlug,
 			imageWidth: slot.width,
 			imageHeight: slot.height,
 			deviceProfile: profile,
+			model: profile.model,
+			palette: profile.palette,
+			paletteId: profile.palette?.id ?? null,
 			userId,
 			cookies,
 		});
