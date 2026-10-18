@@ -17,6 +17,7 @@ import {
 import { selectDisplayForDevice } from "@/lib/display/select";
 import { recordDisplayVisit } from "@/lib/display/visit";
 import {
+	canOfferGenericFirmware,
 	firmwareUpdatesEnabled,
 	getLatestFirmware,
 	isUpdateAvailable,
@@ -51,8 +52,13 @@ function errorImageQuery(baseQueryParams: string, message: string): string {
 	return params.toString();
 }
 
-function firmwareFields(device: Device): Record<string, unknown> {
-	if (!firmwareUpdatesEnabled()) return {};
+function firmwareFields(
+	device: Device,
+	reportedModel: string | null,
+): Record<string, unknown> {
+	if (!firmwareUpdatesEnabled() || !canOfferGenericFirmware(reportedModel)) {
+		return {};
+	}
 	const latest = peekLatestFirmware();
 	// Refresh the cached release after responding; never on the device's clock.
 	afterResponse(async () => {
@@ -226,7 +232,7 @@ export async function GET(request: Request) {
 			// Display tuning profile. Firmware reads this only when it sent
 			// `temperature-profile: true` in the request.
 			temperature_profile: device.temperature_profile ?? "default",
-			...firmwareFields(device),
+			...firmwareFields(device, headers.model),
 		});
 	} catch (error) {
 		logError(error instanceof Error ? error : new Error(String(error)), {

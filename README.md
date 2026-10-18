@@ -125,7 +125,7 @@ Create `.env.local` (for `pnpm dev`) or `.env` (for Docker Compose) with the key
 | `REACT_RENDERER` | `takumi` (default), `satori`, or `browser`. See below. |
 | `ENABLE_EXTERNAL_CATALOG` | Allow fetching the community / TRMNL recipe catalog. |
 | `AUTO_MIGRATE` | `true` applies pending migrations at startup (set by `docker-compose.yml`). |
-| `FIRMWARE_UPDATES` | `auto` (default) offers official firmware updates to devices; `off` for DIY kits and boards running other builds. |
+| `FIRMWARE_UPDATES` | `auto` (default) offers the official OG firmware image to devices reporting model `og`; other boards (X, DIY kits) are never offered it. `off` disables offers. |
 | `LOG_DB_LEVEL` | Minimum level stored in `system_logs`: `debug`, `info` (default), `warn`, `error` or `off`. |
 | `LOG_RETENTION_DAYS` | Delete system and device logs older than this many days (`0`, the default, keeps them). |
 
@@ -156,7 +156,8 @@ The first account created during setup is assigned the admin role automatically.
 - Behind a TLS-terminating proxy, forward `X-Forwarded-Proto`/`X-Forwarded-Host`, otherwise devices
   are given `http://` image URLs and omit their token when downloading (see `docs/api.md`).
 - Do not expose Postgres. The app's `byos_app` role is `NOLOGIN` since migration 0024.
-- DIY kits and other boards running custom firmware should set `FIRMWARE_UPDATES=off`.
+- Firmware update offers go only to boards running the generic OG build (`Model: og`); set
+  `FIRMWARE_UPDATES=off` to disable them entirely.
 
 ## Project Structure
 - `app/` - Next.js routes and screens (including `/recipes`).
