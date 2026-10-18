@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { DEVICE_SETUP_REFRESH_SECONDS } from "@/lib/device/defaults";
+import { CONFIGURED_SPECIAL_FUNCTION } from "@/lib/device/special-function";
 
 /**
  * JSON bodies for the TRMNL `/api/display` contract. Firmware reads the body's
@@ -40,7 +41,7 @@ export function buildDisplayResponse(
 			reset_firmware: false,
 			update_firmware: false,
 			firmware_url: null,
-			special_function: "restart_playlist",
+			special_function: CONFIGURED_SPECIAL_FUNCTION,
 			...extra,
 		},
 		{ status: 200 },

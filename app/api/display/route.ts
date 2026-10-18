@@ -127,9 +127,12 @@ export async function GET(request: Request) {
 			width: headers.width,
 			height: headers.height,
 		});
+		// A button press asking to restart the playlist starts it over.
 		const { playlistItem, refreshRate } = await recordDisplayVisit(
 			device,
 			headers,
+			undefined,
+			{ restartPlaylist: headers.specialFunction === "restart_playlist" },
 		);
 
 		const imageFor = (imagePath: string, query = selection.baseQueryParams) =>
@@ -219,6 +222,7 @@ export async function GET(request: Request) {
 				deviceId: device.friendly_id,
 				screen: shown.screen,
 				filename,
+				specialFunction: headers.specialFunction,
 				render: renderOutcome,
 				refreshRate,
 				displayMode: device.display_mode,
@@ -232,6 +236,8 @@ export async function GET(request: Request) {
 			// Display tuning profile. Firmware reads this only when it sent
 			// `temperature-profile: true` in the request.
 			temperature_profile: device.temperature_profile ?? "default",
+			// Firmware only acts on a button press when the response names it.
+			...(headers.specialFunction ? { action: headers.specialFunction } : {}),
 			...firmwareFields(device, headers.model),
 		});
 	} catch (error) {

@@ -1,5 +1,9 @@
 import { withDeviceApiKey } from "@/lib/database/scoped-db";
 import { checkDbConnection } from "@/lib/database/utils";
+import {
+	parseSpecialFunction,
+	type SpecialFunction,
+} from "@/lib/device/special-function";
 
 export interface RequestHeaders {
 	apiKey: string | null;
@@ -11,7 +15,12 @@ export interface RequestHeaders {
 	width: number | null;
 	height: number | null;
 	model: string | null;
-	specialFunction: boolean;
+	/**
+	 * Button press: the special function the device is running, or null.
+	 * Firmware sends `special_function: true` for the function the server
+	 * configured, or the function's name when picked from the device menu.
+	 */
+	specialFunction: SpecialFunction | null;
 	supportsTemperatureProfile: boolean;
 	hostUrl: string;
 }
@@ -31,7 +40,9 @@ export function parseRequestHeaders(request: Request): RequestHeaders {
 		width: widthStr ? Number.parseInt(widthStr, 10) : null,
 		height: heightStr ? Number.parseInt(heightStr, 10) : null,
 		model: headers.get("Model")?.trim() || null,
-		specialFunction: headers.get("Special-Function") === "true",
+		specialFunction: parseSpecialFunction(
+			headers.get("special_function") ?? headers.get("Special-Function"),
+		),
 		supportsTemperatureProfile: headers.get("temperature-profile") === "true",
 		hostUrl:
 			(headers.get("x-forwarded-proto") || "http") +

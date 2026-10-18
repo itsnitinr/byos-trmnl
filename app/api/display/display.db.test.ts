@@ -138,6 +138,17 @@ test("playlist mode rotates items and persists the position", async () => {
 	expect(rows[0].current_playlist_index).toBe(0);
 });
 
+test("a button press restarts the playlist and is acknowledged", async () => {
+	const headers = { "Access-Token": "display-test-token-0001" };
+	await display(headers); // advance past the first item
+	const pressed = await display({ ...headers, special_function: "true" });
+	expect(pressed).toMatchObject({ status: 0, action: "restart_playlist" });
+	expect(pressed.image_url).toContain("/api/bitmap/year-progress.png");
+	const after = await display(headers);
+	expect(after.action).toBeUndefined();
+	expect(after.image_url).toContain("/api/bitmap/album.png");
+});
+
 test("with authentication, unknown devices get a claim code instead of a device", async () => {
 	sessionUser = null;
 	const body = await display({

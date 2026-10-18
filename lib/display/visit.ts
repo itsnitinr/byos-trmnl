@@ -142,11 +142,18 @@ export async function recordDisplayVisit(
 	device: Device,
 	headers: RequestHeaders,
 	at = new Date(),
+	options: { restartPlaylist?: boolean } = {},
 ): Promise<DisplayVisit> {
 	const run = async (conn: Conn): Promise<DisplayVisit> => {
 		const playlistMode = device.display_mode === DeviceDisplayMode.PLAYLIST;
 		const playlistItem = playlistMode
-			? await activePlaylistItem(conn, device, at)
+			? await activePlaylistItem(
+					conn,
+					options.restartPlaylist
+						? { ...device, current_playlist_index: -1 }
+						: device,
+					at,
+				)
 			: null;
 		const refreshRate = clampRefreshSeconds(
 			playlistMode
