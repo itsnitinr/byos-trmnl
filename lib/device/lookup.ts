@@ -53,11 +53,18 @@ function timestampSeed(): string {
 	return new Date().toISOString().replace(/[-:Z]/g, "");
 }
 
+/** Device/model pairs already reported, so the warning is not repeated every wake. */
+const reportedUnknownModels = new Set<string>();
+
 function logUnknownReportedModel(
 	modelResolution: ModelStorageResolution,
 	deviceId: string,
 ): void {
 	if (!modelResolution.reportedUnknown) return;
+	const key = `${deviceId}\u0000${modelResolution.reportedUnknown}`;
+	if (reportedUnknownModels.has(key)) return;
+	if (reportedUnknownModels.size >= 10_000) reportedUnknownModels.clear();
+	reportedUnknownModels.add(key);
 
 	logWarn("Device reported unknown TRMNL model; using stored/default model", {
 		source: "api/display",
