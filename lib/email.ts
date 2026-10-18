@@ -1,13 +1,8 @@
 /**
- * Email sending utility for Better Auth
+ * Email sending for Better Auth (password resets).
  *
- * NOTE: This is a placeholder implementation that logs emails to the console.
- * In production, you should replace this with a real email service like:
- * - Resend
- * - SendGrid
- * - AWS SES
- * - Postmark
- * - Nodemailer with SMTP
+ * Sends through Resend when RESEND_API_KEY and EMAIL_FROM are set. Without
+ * them, development logs the message to the console and production throws.
  */
 
 interface SendEmailOptions {
@@ -24,6 +19,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 	if (resendApiKey && from) {
 		const response = await fetch("https://api.resend.com/emails", {
 			method: "POST",
+			signal: AbortSignal.timeout(10_000),
 			headers: {
 				Authorization: `Bearer ${resendApiKey}`,
 				"Content-Type": "application/json",
