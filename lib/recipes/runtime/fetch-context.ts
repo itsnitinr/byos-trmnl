@@ -5,21 +5,30 @@ const context = new AsyncLocalStorage<{
 	failures: number;
 }>();
 
-/** Every built-in recipe fetch inherits the enclosing render's cancellation. */
+/**
+ * Every built-in recipe fetch inherits the enclosing render's cancellation.
+ * A failed fetch marks the recipe's source unavailable so the last good data
+ * is kept, unless `optional` says the recipe already handles the miss itself
+ * (an enrichment lookup that may legitimately 404).
+ */
 export async function recipeFetch(
 	input: Parameters<typeof fetch>[0],
-	init?: Parameters<typeof fetch>[1],
+	{
+		optional = false,
+		...init
+	}: NonNullable<Parameters<typeof fetch>[1]> & { optional?: boolean } = {},
 ): Promise<Response> {
-	const active = context.getStore();
+	const store = context.getStore();
+	const active = optional ? undefined : store;
 	const signals = [
 		AbortSignal.timeout(10_000),
-		active?.signal,
-		init?.signal,
+		store?.signal,
+		init.signal,
 	].filter((signal): signal is AbortSignal => Boolean(signal));
 	try {
 		const response = await globalThis.fetch(input, {
 			...init,
-			...(active ? { cache: "no-store" as const, next: undefined } : {}),
+			...(store ? { cache: "no-store" as const, next: undefined } : {}),
 			signal: AbortSignal.any(signals),
 		});
 		if (!response.ok && active) active.failures++;
