@@ -120,6 +120,9 @@ Status: `[x]` done, `[~]` partially done / follow-up noted, `[ ]` open.
   responses now carry `image_url_timeout: 30` (firmware source: `parse_response_api_display.cpp`).
 - [~] Firmware sends `Access-Token` with the image download only when the image URL is same-origin
   with its API base URL; documented the `X-Forwarded-Proto` requirement (docs/api.md, README).
+- [x] `recipeFetch` counted any non-OK response as a source failure, so a 404 from an optional
+  enrichment lookup (Who's Overhead route/logo for an unknown callsign) discarded the live data
+  and served stale or 500. Recipes can now pass `optional: true` for lookups they handle.
 
 ### Maintainability
 

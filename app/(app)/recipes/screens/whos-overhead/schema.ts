@@ -50,8 +50,21 @@ export const aircraftSchema = z.object({
 	altitude: z.number().nullable(),
 	speed: z.number().nullable(),
 	heading: z.number().nullable(),
+	/** Feet per minute; positive is climbing. */
+	verticalRate: z.number().nullable().default(null),
 	distanceKm: z.number(),
 	bearing: z.number(),
+	/** Great-circle km from the origin airport and to the destination, when both are known. */
+	routeFlownKm: z.number().nullable().default(null),
+	routeRemainingKm: z.number().nullable().default(null),
+});
+/** Other aircraft in range, drawn on the radar around the nearest one. */
+export const trafficSchema = z.object({
+	hex: z.string(),
+	distanceKm: z.number(),
+	bearing: z.number(),
+	heading: z.number().nullable(),
+	altitude: z.number().nullable(),
 });
 export const dataSchema = z.object({
 	status: z.enum(["live", "empty", "error", "demo"]).default("error"),
@@ -60,6 +73,8 @@ export const dataSchema = z.object({
 	updated: z.string().default(""),
 	count: z.number().default(0),
 	aircraft: aircraftSchema.optional(),
+	traffic: z.array(trafficSchema).default([]),
 });
 export type OverheadData = z.infer<typeof dataSchema>;
+export type OverheadTraffic = z.infer<typeof trafficSchema>;
 export type OverheadParams = z.infer<typeof paramsSchema>;
