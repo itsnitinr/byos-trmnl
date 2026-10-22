@@ -16,7 +16,7 @@ import {
 } from "@/lib/display/responses";
 import { selectDisplayForDevice } from "@/lib/display/select";
 import { recordDisplayVisit } from "@/lib/display/visit";
-import { scheduleWarmup } from "@/lib/display/warmup";
+import { cancelWarmup, scheduleWarmup } from "@/lib/display/warmup";
 import {
 	canOfferGenericFirmware,
 	firmwareUpdatesEnabled,
@@ -149,16 +149,24 @@ export async function GET(request: Request) {
 			);
 		}
 
+		// A button press asking to restart the playlist starts it over.
+		const { quietHours, playlistItem, playlistItems, refreshRate } =
+			await recordDisplayVisit(device, headers, undefined, {
+				restartPlaylist: headers.specialFunction === "restart_playlist",
+			});
+		if (quietHours) {
+			cancelWarmup(String(device.id));
+			// Firmware applies refresh_rate on status 0 even with no image URL.
+			// A 503 would retain the previous interval and keep waking overnight.
+			return buildDisplayResponse("", "", refreshRate, {
+				...(headers.specialFunction ? { action: headers.specialFunction } : {}),
+			});
+		}
 		const selection = await selectDisplayForDevice(device, {
 			hostUrl: headers.hostUrl,
 			width: headers.width,
 			height: headers.height,
 		});
-		// A button press asking to restart the playlist starts it over.
-		const { playlistItem, playlistItems, refreshRate } =
-			await recordDisplayVisit(device, headers, undefined, {
-				restartPlaylist: headers.specialFunction === "restart_playlist",
-			});
 
 		const imageFor = (imagePath: string, query = selection.baseQueryParams) =>
 			buildDeviceImageUrl({

@@ -56,45 +56,60 @@ const dimension = z
 	)
 	.optional();
 
-export const deviceUpdateSchema = z.object({
-	id: z.coerce.number().int().positive(),
-	name: z.string().trim().min(1, "Name is required").max(100).optional(),
-	mac_address: z
-		.string()
-		.trim()
-		.min(1)
-		.max(64)
-		.transform((value) => value.toUpperCase())
-		.optional(),
-	api_key: z
-		.string()
-		.trim()
-		.min(8, "API key must be at least 8 characters")
-		.max(128)
-		.regex(/^\S+$/, "API key cannot contain spaces")
-		.optional(),
-	friendly_id: z
-		.string()
-		.trim()
-		.min(1)
-		.max(32)
-		.regex(/^[A-Za-z0-9_-]+$/, "Friendly ID may only use letters and digits")
-		.optional(),
-	timezone: z.string().refine(isValidTimeZone, "Unknown timezone").optional(),
-	refresh_schedule: refreshScheduleSchema.nullable().optional(),
-	screen: optionalText(200),
-	playlist_id: optionalId,
-	mixup_id: optionalId,
-	display_mode: z.enum(DeviceDisplayMode).optional(),
-	screen_width: dimension,
-	screen_height: dimension,
-	screen_orientation: z
-		.preprocess(emptyToNull, z.enum(["landscape", "portrait"]).nullable())
-		.optional(),
-	model: optionalText(100),
-	palette_id: optionalText(100),
-	temperature_profile: z.enum(["default", "a", "b", "c"]).optional(),
-});
+export const deviceUpdateSchema = z
+	.object({
+		id: z.coerce.number().int().positive(),
+		name: z.string().trim().min(1, "Name is required").max(100).optional(),
+		mac_address: z
+			.string()
+			.trim()
+			.min(1)
+			.max(64)
+			.transform((value) => value.toUpperCase())
+			.optional(),
+		api_key: z
+			.string()
+			.trim()
+			.min(8, "API key must be at least 8 characters")
+			.max(128)
+			.regex(/^\S+$/, "API key cannot contain spaces")
+			.optional(),
+		friendly_id: z
+			.string()
+			.trim()
+			.min(1)
+			.max(32)
+			.regex(/^[A-Za-z0-9_-]+$/, "Friendly ID may only use letters and digits")
+			.optional(),
+		timezone: z.string().refine(isValidTimeZone, "Unknown timezone").optional(),
+		sleep_mode_enabled: z.boolean().optional(),
+		sleep_start_time: z.number().int().min(0).max(1439).nullable().optional(),
+		sleep_end_time: z.number().int().min(0).max(1439).nullable().optional(),
+		refresh_schedule: refreshScheduleSchema.nullable().optional(),
+		screen: optionalText(200),
+		playlist_id: optionalId,
+		mixup_id: optionalId,
+		display_mode: z.enum(DeviceDisplayMode).optional(),
+		screen_width: dimension,
+		screen_height: dimension,
+		screen_orientation: z
+			.preprocess(emptyToNull, z.enum(["landscape", "portrait"]).nullable())
+			.optional(),
+		model: optionalText(100),
+		palette_id: optionalText(100),
+		temperature_profile: z.enum(["default", "a", "b", "c"]).optional(),
+	})
+	.refine(
+		(value) =>
+			!value.sleep_mode_enabled ||
+			(value.sleep_start_time != null &&
+				value.sleep_end_time != null &&
+				value.sleep_start_time !== value.sleep_end_time),
+		{
+			message: "Choose different start and end times for quiet hours",
+			path: ["sleep_end_time"],
+		},
+	);
 
 export type DeviceUpdate = z.infer<typeof deviceUpdateSchema>;
 

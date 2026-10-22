@@ -30,6 +30,30 @@ test("stores refresh rates as numbers", () => {
 	});
 });
 
+test("preserves quiet-hours settings and rejects incomplete enabled windows", () => {
+	const input = {
+		id: 3,
+		sleep_mode_enabled: true,
+		sleep_start_time: 1380,
+		sleep_end_time: 420,
+	};
+	expect(deviceUpdateSchema.parse(input)).toEqual(input);
+	for (const override of [
+		{ sleep_start_time: null },
+		{ sleep_end_time: 1380 },
+		{ sleep_end_time: 1440 },
+		{ sleep_start_time: -1 },
+		{ sleep_start_time: 0.5 },
+	]) {
+		expect(
+			deviceUpdateSchema.safeParse({ ...input, ...override }).success,
+		).toBe(false);
+	}
+	expect(
+		deviceUpdateSchema.safeParse({ id: 3, sleep_mode_enabled: false }).success,
+	).toBe(true);
+});
+
 test("rejects values the runtime cannot use", () => {
 	for (const input of [
 		{ id: 3, timezone: "Mars/Olympus" },

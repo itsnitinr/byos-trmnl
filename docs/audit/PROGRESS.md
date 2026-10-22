@@ -170,6 +170,23 @@ Checked against the firmware source (usetrmnl/trmnl-firmware: `src/display_sessi
   Refresh policy (`display_show_image`): 1-bit (or 2-colour) PNG → partial refresh, full every 8th
   update or with `maximum_compatibility`, "fast" when the interval is ≥ 30 min; 4-gray → always full.
 
+### Quiet hours — 2026-10-22
+
+- Quiet hours implemented (2026-10-22, current checkout): device editor Refresh
+  tab now saves the existing sleep-mode fields. Screen, mixup, and playlist
+  modes all retain the current screen and sleep until the local window ends;
+  playlist position is preserved, and normal intervals are capped at the next
+  quiet-hours start. No migration or automatic enablement. A successful empty
+  image response applies the sleep interval on scheduled firmware wakes; button
+  actions remain firmware-controlled. DST gaps/repeats and overnight windows
+  are covered. Existing hourly refresh overrides remain ordinary intervals.
+  Validation: 278 unit tests / 53 suites, TypeScript and Biome passed. Tests
+  cover all modes, no rendering or playlist reads while sleeping, resume from the
+  saved index, boundary capping, fractional timezone offsets, DST gaps/repeats,
+  and a fall-back window longer than 24 hours. Used repository-local binaries
+  because the installed pnpm launcher points to a missing executable (Node 26.7.0).
+  No database integration or physical-device run; no deployment.
+
 ## Decisions
 
 - Work in a separate worktree to keep the user's uncommitted `main` changes intact.

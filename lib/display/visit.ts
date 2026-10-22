@@ -5,6 +5,7 @@ import {
 	DISPLAY_FALLBACK_REFRESH_SECONDS,
 	normalizeRefreshSchedule,
 } from "@/lib/device/defaults";
+import { quietHoursAt } from "@/lib/device/quiet-hours";
 import type { RequestHeaders } from "@/lib/device/request-headers";
 import { logError, logInfo } from "@/lib/logger";
 import { DeviceDisplayMode } from "@/lib/mixup/constants";
@@ -48,6 +49,8 @@ export function calculateRefreshRate(
 }
 
 export type DisplayVisit = {
+	/** Keep the displayed image and playlist position until quiet hours end. */
+	quietHours: boolean;
 	/** Playlist mode only: the item to show, or null when none is eligible. */
 	playlistItem: PlaylistItem | null;
 	/** Playlist mode only: all items, e.g. to predict the next wake's item. */
@@ -148,6 +151,25 @@ export async function recordDisplayVisit(
 	options: { restartPlaylist?: boolean } = {},
 ): Promise<DisplayVisit> {
 	const run = async (conn: Conn): Promise<DisplayVisit> => {
+		const quiet = quietHoursAt(device, at);
+		if (quiet?.active) {
+			// Do not read/advance the playlist or render anything while asleep.
+			// A DST fall-back window can exceed the normal 24-hour refresh cap.
+			await writeDeviceStatus(
+				conn,
+				device,
+				headers,
+				quiet.secondsUntilBoundary,
+				undefined,
+				at,
+			);
+			return {
+				quietHours: true,
+				playlistItem: null,
+				playlistItems: [],
+				refreshRate: quiet.secondsUntilBoundary,
+			};
+		}
 		const playlistMode = device.display_mode === DeviceDisplayMode.PLAYLIST;
 		const { item: playlistItem, items: playlistItems } = playlistMode
 			? await activePlaylistItem(
@@ -158,7 +180,7 @@ export async function recordDisplayVisit(
 					at,
 				)
 			: { item: null, items: [] };
-		const refreshRate = clampRefreshSeconds(
+		const normalRefreshRate = clampRefreshSeconds(
 			playlistMode
 				? (playlistItem?.duration ?? DISPLAY_FALLBACK_REFRESH_SECONDS)
 				: calculateRefreshRate(
@@ -168,6 +190,10 @@ export async function recordDisplayVisit(
 						at,
 					),
 		);
+		// Wake at quiet-hours start even if the normal interval would skip it.
+		const refreshRate = quiet
+			? Math.min(normalRefreshRate, quiet.secondsUntilBoundary)
+			: normalRefreshRate;
 		await writeDeviceStatus(
 			conn,
 			device,
@@ -176,7 +202,7 @@ export async function recordDisplayVisit(
 			playlistItem?.order_index,
 			at,
 		);
-		return { playlistItem, playlistItems, refreshRate };
+		return { quietHours: false, playlistItem, playlistItems, refreshRate };
 	};
 	return device.user_id ? withExplicitUserScope(device.user_id, run) : run(db);
 }
