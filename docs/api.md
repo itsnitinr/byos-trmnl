@@ -64,6 +64,49 @@ curl -X GET http://<BASE_URL>/api/display \
 }
 ```
 
+**Quiet hours**
+
+Enable quiet hours in the device editor's **Refresh** tab. The existing
+`sleep_mode_enabled`, `sleep_start_time`, and `sleep_end_time` fields also remain
+configurable through authenticated `PATCH /api/devices/{id}`; times are integer
+minutes since midnight (for example, 1380 = 23:00 and 420 = 07:00).
+
+Quiet hours use the device's timezone and override screen, mixup, and playlist
+refresh intervals. The start is inclusive and the end exclusive; overnight
+windows are supported. Incomplete or equal start/end values saved through the
+API disable the window; the editor requires distinct times when enabled.
+
+During the window, `/api/display` returns HTTP 200 with `status: 0`, empty
+`image_url` and `filename`, and `refresh_rate` equal to the remaining seconds
+until the window ends. For example, at 23:30 in a 23:00–07:00 window:
+
+```json
+{
+  "status": 0,
+  "image_url": "",
+  "image_url_timeout": 30,
+  "filename": "",
+  "refresh_rate": 27000,
+  "reset_firmware": false,
+  "update_firmware": false,
+  "firmware_url": null,
+  "special_function": "restart_playlist"
+}
+```
+
+The server skips rendering, firmware offers, and playlist advancement, retaining
+the last screen. Firmware applies the interval even without an image URL on a
+normal scheduled wake (see [firmware response handling](https://github.com/usetrmnl/firmware/blob/main/src/display_session.cpp)).
+Button/menu actions remain governed by the firmware's special-function handling.
+Normal intervals are capped at the next quiet-hours start. At the end, playlist
+selection resumes from its saved position using the items eligible at that time.
+
+Daylight-saving changes use elapsed time: a skipped boundary takes effect at the
+clock jump; a repeated boundary uses the next occurrence. A fall-back window may
+exceed the usual 24-hour refresh cap. Existing hourly time-range overrides are
+not automatically converted into quiet hours. Settings take effect on the next
+check-in; editing a sleeping device cannot wake it remotely.
+
 ### `POST /api/log`
 Uploads buffered device log entries for later diagnosis. The device must already
 belong to an owner (claimed or created in single-user mode).

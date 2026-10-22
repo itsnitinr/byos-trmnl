@@ -7,6 +7,8 @@ import { CONFIGURED_SPECIAL_FUNCTION } from "@/lib/device/special-function";
  * `status`, not the HTTP code, so every answer is HTTP 200:
  *
  * - `status: 0` — show `image_url` (named `filename`) and sleep `refresh_rate`.
+ *   An empty URL keeps the current screen and still applies the sleep interval
+ *   on normal scheduled wakes (quiet hours).
  * - `status: 202` — device not registered; firmware shows its friendly-ID screen.
  * - `status: 500` — **factory reset**: firmware erases its Wi-Fi settings and
  *   credentials and reboots into the setup portal. Never send it for a server

@@ -302,6 +302,9 @@ export default function DeviceClientPage({
 				api_key: editedDevice.api_key,
 				friendly_id: editedDevice.friendly_id,
 				timezone: editedDevice.timezone,
+				sleep_mode_enabled: editedDevice.sleep_mode_enabled,
+				sleep_start_time: editedDevice.sleep_start_time,
+				sleep_end_time: editedDevice.sleep_end_time,
 				refresh_schedule: editedDevice.refresh_schedule,
 				screen: editedDevice.screen,
 				playlist_id: editedDevice.playlist_id,
@@ -491,6 +494,9 @@ export default function DeviceClientPage({
 					onInputChange={handleInputChange}
 					onNestedInputChange={handleNestedInputChange}
 					onSelectChange={handleSelectChange}
+					onQuietHoursChange={(settings) =>
+						setEditedDevice((current) => ({ ...current, ...settings }))
+					}
 					onScreenChange={handleScreenChange}
 					onDeviceSizePresetChange={handleDeviceSizePresetChange}
 					onCustomSizeChange={handleCustomSizeChange}

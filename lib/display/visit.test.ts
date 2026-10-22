@@ -40,11 +40,12 @@ const headers = {
 function fakeConnection(playlistRows: Record<string, unknown>[] = []) {
 	const set = jest.fn();
 	const update = jest.fn(async () => []);
+	const read = jest.fn(async () => playlistRows);
 	const conn = {
 		selectFrom: () => ({
 			selectAll: () => ({
 				where: () => ({
-					orderBy: () => ({ execute: async () => playlistRows }),
+					orderBy: () => ({ execute: read }),
 				}),
 			}),
 		}),
@@ -58,7 +59,7 @@ function fakeConnection(playlistRows: Record<string, unknown>[] = []) {
 	jest
 		.mocked(withExplicitUserScope)
 		.mockImplementation(async (_user, work) => work(conn as never));
-	return { set, update };
+	return { set, update, read };
 }
 
 beforeEach(() => jest.mocked(withExplicitUserScope).mockReset());
@@ -169,6 +170,7 @@ test("a failed playlist write is reported; telemetry-only failure is best effort
 		),
 	).rejects.toThrow("database unavailable");
 	await expect(recordDisplayVisit(device(), headers, at)).resolves.toEqual({
+		quietHours: false,
 		playlistItem: null,
 		playlistItems: [],
 		refreshRate: 180,
@@ -211,4 +213,98 @@ test("refresh helpers clamp and fall back", () => {
 			new Date("2026-10-17T23:30:00Z"),
 		),
 	).toBe(3600);
+});
+
+const modes = Object.values(DeviceDisplayMode);
+const overnight = {
+	sleep_mode_enabled: true,
+	sleep_start_time: 23 * 60,
+	sleep_end_time: 7 * 60,
+};
+
+test.each(
+	modes,
+)("%s sleeps until quiet-hours end without advancing the playlist", async (mode) => {
+	const { set, read } = fakeConnection([
+		{ screen_id: "news", duration: 60, order_index: 1 },
+	]);
+	const visit = await recordDisplayVisit(
+		device({
+			...overnight,
+			display_mode: mode,
+			playlist_id: "p1",
+			current_playlist_index: 0,
+			refresh_schedule: { default_refresh_rate: 30, time_ranges: [] },
+		}),
+		headers,
+		new Date("2026-10-22T23:30:00Z"),
+		{ restartPlaylist: true },
+	);
+	expect(visit).toEqual({
+		quietHours: true,
+		playlistItem: null,
+		playlistItems: [],
+		refreshRate: 27000,
+	});
+	expect(set.mock.calls[0][0]).toMatchObject({
+		next_expected_update: "2026-10-23T07:00:00.000Z",
+		last_refresh_duration: 27000,
+		battery_voltage: 3.9,
+	});
+	expect(set.mock.calls[0][0]).not.toHaveProperty("current_playlist_index");
+	expect(read).not.toHaveBeenCalled();
+});
+
+test.each(
+	modes,
+)("%s caps long daytime intervals at quiet-hours start", async (mode) => {
+	fakeConnection([{ screen_id: "news", duration: 86400, order_index: 1 }]);
+	const visit = await recordDisplayVisit(
+		device({
+			...overnight,
+			display_mode: mode,
+			playlist_id: "p1",
+			refresh_schedule: { default_refresh_rate: 86400, time_ranges: [] },
+		}),
+		headers,
+		new Date("2026-10-22T22:55:00Z"),
+	);
+	expect(visit.quietHours).toBe(false);
+	expect(visit.refreshRate).toBe(300);
+});
+
+test("playlist resumes from its saved position exactly at quiet-hours end", async () => {
+	const { set } = fakeConnection([
+		{ screen_id: "weather", duration: 120, order_index: 0 },
+		{ screen_id: "news", duration: 600, order_index: 3 },
+	]);
+	const visit = await recordDisplayVisit(
+		device({
+			...overnight,
+			display_mode: DeviceDisplayMode.PLAYLIST,
+			playlist_id: "p1",
+			current_playlist_index: 0,
+		}),
+		headers,
+		new Date("2026-10-23T07:00:00Z"),
+	);
+	expect(visit.quietHours).toBe(false);
+	expect(visit.playlistItem?.screen_id).toBe("news");
+	expect(visit.refreshRate).toBe(600);
+	expect(set.mock.calls[0][0].current_playlist_index).toBe(3);
+});
+
+test("quiet-hours sleep is not truncated to 24 hours on a fall-back day", async () => {
+	fakeConnection();
+	const visit = await recordDisplayVisit(
+		device({
+			...overnight,
+			timezone: "America/New_York",
+			sleep_start_time: 3 * 60,
+			sleep_end_time: 179,
+		}),
+		headers,
+		new Date("2026-10-31T07:00:00Z"),
+	);
+	expect(visit.refreshRate).toBe(89940);
 });

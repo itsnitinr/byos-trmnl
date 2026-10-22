@@ -27,6 +27,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -64,6 +65,11 @@ interface DeviceEditFormProps {
 	) => void;
 	onNestedInputChange: (path: string, value: string) => void;
 	onSelectChange: (name: string, value: string) => void;
+	onQuietHoursChange: (
+		settings: Partial<
+			Pick<Device, "sleep_mode_enabled" | "sleep_start_time" | "sleep_end_time">
+		>,
+	) => void;
 	onScreenChange: (screenId: string | null) => void;
 	onDeviceSizePresetChange: (preset: DeviceSizePreset) => void;
 	onCustomSizeChange: (field: "width" | "height", value: number) => void;
@@ -90,6 +96,7 @@ export default function DeviceEditForm({
 	onInputChange,
 	onNestedInputChange,
 	onSelectChange,
+	onQuietHoursChange,
 	onScreenChange,
 	onDeviceSizePresetChange,
 	onCustomSizeChange,
@@ -521,6 +528,64 @@ export default function DeviceEditForm({
 						</TabsContent>
 
 						<TabsContent value="refresh" className="mt-4 space-y-4">
+							<div className="space-y-3 rounded-lg border p-3">
+								<div className="flex items-center justify-between gap-3">
+									<Label htmlFor="sleep_mode_enabled">Quiet hours</Label>
+									<Switch
+										id="sleep_mode_enabled"
+										checked={editedDevice.sleep_mode_enabled}
+										onCheckedChange={(enabled) =>
+											onQuietHoursChange({
+												sleep_mode_enabled: enabled,
+												sleep_start_time:
+													editedDevice.sleep_start_time ?? 23 * 60,
+												sleep_end_time: editedDevice.sleep_end_time ?? 7 * 60,
+											})
+										}
+									/>
+								</div>
+								<p className="text-xs text-muted-foreground">
+									Keep the current screen and pause all updates, including
+									playlists, until the end time. Times use{" "}
+									{editedDevice.timezone || "UTC"}. Changes take effect when the
+									device next checks in.
+								</p>
+								{editedDevice.sleep_mode_enabled && (
+									<div className="grid grid-cols-2 gap-3">
+										{(
+											[
+												["sleep_start_time", "Start"],
+												["sleep_end_time", "End"],
+											] as const
+										).map(([field, label]) => {
+											const minutes = editedDevice[field];
+											return (
+												<Field key={field} label={label} htmlFor={field}>
+													<Input
+														id={field}
+														type="time"
+														required
+														value={
+															minutes == null
+																? ""
+																: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
+														}
+														onChange={(event) => {
+															const value = event.target.value;
+															const [hours, minute] = value
+																.split(":")
+																.map(Number);
+															onQuietHoursChange({
+																[field]: value ? hours * 60 + minute : null,
+															});
+														}}
+													/>
+												</Field>
+											);
+										})}
+									</div>
+								)}
+							</div>
 							<Field
 								label="Default refresh rate"
 								htmlFor="refresh_schedule.default_refresh_rate"
