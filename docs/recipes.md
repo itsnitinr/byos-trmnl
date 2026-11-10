@@ -169,6 +169,48 @@ including DST changeover days. Live frames advance every ten minutes. Set
 
 ![Sun path over Bengaluru at sunset](screenshots/sun-path.png)
 
+## Flyover · ISS
+
+The `flyover` recipe adapts [Baszert's Flyover](https://github.com/Baszert/trmnl-flyover)
+to BYOS's server-rendered React recipe pipeline. It draws a 3D Earth lit by the
+current Sun, NASA night lights, the ISS, and a dashed ground track for the next
+52 minutes. The readout shows its approximate country/ocean, speed, altitude,
+and great-circle ground distance from your location. The recipe uses a white
+background with black text and a naturally shaded globe.
+
+Set `latitude`, `longitude`, and `location` for your observer. Choose `view`:
+`iss` follows the station, `place` faces your location, and `sun` faces the
+sunlit hemisphere. A ring marks your location when visible; when the ISS is on
+the far side, its marker moves toward the rim and the readout says so. Choose
+`km` or `miles` for `units`.
+
+Data refreshes every 60 seconds by default; the snapshot time is shown in UTC.
+This does not change the device's wake interval. CelesTrak orbital elements are
+cached for eight hours, with wheretheiss.at as a fallback. Elements beyond 48
+hours from their epoch are rejected; if both sources fail, BYOS keeps its last
+good snapshot with the standard stale stamp. The orbit uses the original
+plugin's secular J2 approximation, suitable for a display rather than pass
+prediction. Country labels use a coarse town grid and are approximate.
+
+`clouds` optionally overlays NASA GIBS satellite imagery from 30 hours earlier.
+It has a 2.5-second fetch timeout and falls back to bundled NASA Blue Marble
+and Black Marble textures. No API key, browser renderer, or client script is
+needed. The final device pass dithers the globe to black/white or grayscale.
+Source revisions, the MIT license, and image credits are recorded in
+`lib/recipes/flyover/README.md`.
+
+![Flyover following the ISS, rendered for a black-and-white device](screenshots/flyover.png)
+
+Run `node scripts/preview-flyover.cjs` to regenerate this screenshot and 15 device
+previews (three views × five layouts, including grayscale TRMNL X). It uses a
+fixed CelesTrak fixture from 10 November 2026 and no network or database, with
+the real data processing, rasterizer and device encoder. It checks dimensions,
+black/white output, and firmware size budgets; images go to `/tmp/byos-flyover`.
+For a live-source smoke test, run
+`FLYOVER_LIVE=1 node scripts/preview-flyover.cjs /tmp/byos-flyover-live`.
+On Node versions supporting it, add `NODE_USE_ENV_PROXY=1` if the host requires
+an HTTP proxy; the offline fixture preview needs no network configuration.
+
 ## Fetching Data
 
 If a recipe needs to fetch data at render time, add a `getData` function

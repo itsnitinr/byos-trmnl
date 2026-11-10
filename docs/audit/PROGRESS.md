@@ -211,6 +211,40 @@ Checked against the firmware source (usetrmnl/trmnl-firmware: `src/display_sessi
   strict black/white pixels, and fit firmware image budgets. Visually inspected
   galleries and alternate-layout samples. No physical-device validation or deployment.
 
+### Flyover ISS recipe — 2026-11-11
+
+- Added `flyover`, a native React recipe adapted from Baszert/trmnl-flyover
+  (MIT, pinned source revision and attribution in `lib/recipes/flyover`).
+  Server-side globe shading retains sunlight, twilight, ocean glint, night
+  lights, a 52-minute ISS ground track, and an observer ring. Three camera
+  views, observer coordinates/label, metric/imperial units, and optional daily
+  clouds are configurable. Snapshot time is visible in UTC.
+- Bundled NASA Blue/Black Marble textures so NASA cloud outages never remove
+  the Earth. Cloud requests time out at 2.5 seconds and cache for an hour.
+  CelesTrak elements are cached for eight hours with wheretheiss.at TLE fallback;
+  malformed or >48-hour-old elements fail into the standard last-good-data
+  policy. Snapshot data refreshes every 60 seconds; device wake rates are unchanged.
+- Added focused coverage for orbit validity, solar units, distances, horizon
+  projection, cloud masks, bundled textures, and fallback within the runtime
+  deadline. Added `scripts/preview-flyover.cjs` with a fixed orbit fixture and
+  actual recipe → Takumi → device encoding; no database/network needed.
+- Validation: 11 focused tests passed; TypeScript and repository Biome passed.
+  All 15 deterministic device previews passed dimensions and firmware budgets.
+  Inspected black/white landscape, portrait, half-screen, and grayscale TRMNL X
+  images. Live-source smoke test fetched CelesTrak elements and NASA clouds and
+  passed another 15 renders (Node required `NODE_USE_ENV_PROXY=1` on this host).
+  Production build passed with the existing `instrumentation.ts` Edge Runtime
+  warning. Final full suite passed: 313 tests / 54 suites, including the
+  cache-expiry regression test. Local binaries used because pnpm is absent
+  from this shell (Node 26.7.0). No deployment or physical-device test.
+
+- Light-mode follow-up: switched the canvas, text and footer to white with
+  black type/rules. Made space around the globe transparent and added a thin
+  silhouette outline; retained natural day/night shading and contrasting orbit
+  markers. Regenerated all 15 device previews; dimensions, black/white pixels,
+  and firmware budgets passed. Visually checked landscape, half-screen and
+  grayscale TRMNL X. TypeScript, focused Biome and diff checks passed.
+
 ## Decisions
 
 - Work in a separate worktree to keep the user's uncommitted `main` changes intact.
