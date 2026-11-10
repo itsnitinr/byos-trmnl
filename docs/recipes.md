@@ -97,9 +97,26 @@ device-image pipeline. No `screens.json` to edit.
 ## Generative Print
 
 The `generative-print` art recipe draws local SVG geometry with no API keys or
-external images. Its default `daily` style cycles through contours, orbits, and
-geometric tiles on successive calendar days. Choose a specific `style` to keep
-that family of artwork while its composition changes daily.
+external images. Its default `daily` style cycles through nine families on successive calendar
+days. Choose a specific `style` to keep that family while its composition changes
+daily:
+
+| Style | Print title | Composition |
+| --- | --- | --- |
+| `contours` | Folded terrain | Nested, undulating contour rings |
+| `orbits` | Orbital study | Tilted ellipses around a solid disk |
+| `tiles` | Quarter turns | Connected quarter-circle ribbons |
+| `flow` | Lines of drift | Sweeping, undulating line fields |
+| `weave` | Over & under | Alternating woven ribbon crossings |
+| `strata` | Land memory | Layered ridgelines beneath a black sun |
+| `fans` | Radial rhythm | Rotating quarter-circle fans |
+| `blocks` | Counterweight | Balanced geometric shapes and stripes |
+| `phyllotaxis` | Golden angle | A seedhead arranged by the golden angle |
+
+Line spacing scales with the artwork so smaller slots keep the same visual
+rhythm. Version 1.1 changes the geometry of the original styles and expands the
+rotation from three days to nine; saved style names, dates, and seeds still work.
+Reproducibility applies within the same recipe version.
 
 Set `timezone` for the edition rollover, or set `date` (`YYYY-MM-DD`) to keep a
 favorite edition. An optional `seed` (up to 64 characters) creates a personal
@@ -107,7 +124,16 @@ variation. The same date, seed, style, and screen dimensions reproduce the same
 print. The layout adapts to landscape, portrait, half-screen, and TRMNL X logical
 canvases; only black and white are used.
 
-![Generative print recipe and style controls](screenshots/generative-print.png)
+![Six new generative print styles, rendered for a black-and-white device](screenshots/generative-print-variants.png)
+
+![Refined contours, orbits, and tiles](screenshots/generative-print-classics.png)
+
+Regenerate the galleries with `node scripts/preview-generative-print.cjs`.
+This also renders all nine styles in landscape, portrait, both half-screen
+orientations, and TRMNL X through Takumi and the device encoder. It verifies PNG
+dimensions, strict black-and-white pixels, and firmware image budgets without a
+server or database. Individual images are written to `/tmp/byos-generative-print`
+(or the directory passed as the first argument).
 
 ## Wind Map
 

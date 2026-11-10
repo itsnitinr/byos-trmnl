@@ -187,6 +187,30 @@ Checked against the firmware source (usetrmnl/trmnl-firmware: `src/display_sessi
   because the installed pnpm launcher points to a missing executable (Node 26.7.0).
   No database integration or physical-device run; no deployment.
 
+### Generative print expansion — 2026-11-11
+
+- Expanded the daily rotation from three to nine styles: added flow, weave,
+  strata, fans, blocks, and phyllotaxis. Existing explicit style names, date
+  pinning, timezone rollover, and personal seeds remain supported.
+- Refined the original contours/orbits/tiles, including non-intersecting tile
+  ribbons and stronger accent lines. Geometry scales in a shared design space,
+  with a minimum scale to preserve thin strokes on short 1-bit slots. Fans and
+  blocks fit complete rows; seedheads retain clear margins.
+- Bumped the recipe to 1.1.0; documented that geometry and daily style selection
+  change from 1.0.0. Added a nine-style reference and rendered galleries in
+  `docs/recipes.md`.
+- Added `node scripts/preview-generative-print.cjs`: uses the real recipe,
+  bundled font bytes, Takumi rasterization, and device PNG encoding. Requires
+  no database, running server, or network; only Next's compile-time font loader
+  declarations use the existing test shim. Writes galleries to docs and 45
+  individual device images to `/tmp/byos-generative-print` (override via argv).
+- Validation: 302 unit tests / 53 suites passed; final focused rerun passed
+  32 tests / 3 suites. TypeScript and Biome passed. All nine styles rendered in
+  landscape (800×480), portrait (480×800), wide and tall half-screen slots
+  (800×240 / 400×480), and TRMNL X (1872×1404). All 45 PNGs have correct dimensions,
+  strict black/white pixels, and fit firmware image budgets. Visually inspected
+  galleries and alternate-layout samples. No physical-device validation or deployment.
+
 ## Decisions
 
 - Work in a separate worktree to keep the user's uncommitted `main` changes intact.

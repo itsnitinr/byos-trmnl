@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { printStyles } from "@/app/(app)/recipes/screens/generative-print/artwork";
 import { paramsSchema } from "@/app/(app)/recipes/screens/generative-print/generative-print";
 import { zodObjectToParamDefinitions } from "./zod-form";
 
@@ -13,7 +14,7 @@ test("the print style is an editable dropdown with its default and description",
 		type: "string",
 		default: "daily",
 		description: "Rotate styles each day, or choose a single style",
-		options: ["daily", "contours", "orbits", "tiles"],
+		options: ["daily", ...printStyles],
 	});
 });
 

@@ -8,11 +8,11 @@ import { dailyArtParams, editionDate } from "@/lib/recipes/art/daily";
 import type { RecipeDefinition, RecipeRenderProps } from "@/lib/recipes/types";
 import { createScreenProfile } from "@/lib/trmnl/screen-profile";
 import { PreSatori } from "@/utils/pre-satori";
-import { generatePrint } from "./artwork";
+import { generatePrint, printStyles } from "./artwork";
 
 export const paramsSchema = dailyArtParams.extend({
 	style: z
-		.enum(["daily", "contours", "orbits", "tiles"])
+		.enum(["daily", ...printStyles])
 		.default("daily")
 		.describe("Rotate styles each day, or choose a single style")
 		.meta({ title: "Print style" }),
@@ -129,11 +129,11 @@ export const definition: RecipeDefinition<typeof paramsSchema> = {
 		slug: "generative-print",
 		title: "Generative print",
 		description:
-			"A daily series of contour fields, orbital lines and geometric tiles. Choose a style, add a personal seed, or pin a favorite date. No external services required.",
+			"Nine daily print styles: contours, orbits, tiles, flow fields, woven ribbons, landscapes, radial fans, geometric blocks and spiral seedheads. Choose a style, add a personal seed, or pin a favorite date. No external services required.",
 		published: true,
 		category: "art",
 		tags: ["generative", "geometric", "daily", "art"],
-		version: "1.0.0",
+		version: "1.1.0",
 		renderSettings: {
 			imageDither: false,
 			supersample: false,
